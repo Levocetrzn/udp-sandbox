@@ -1,0 +1,497 @@
+================================================================================
+UDP-SCOPE / UDP PROTOCOL SANDBOX — COMPLETE COMPONENT ARCHITECTURE & GUIDE
+================================================================================
+Document: Architectural Guide & Technical Reference
+Scope: All Modules, UI Components, Canvases, Simulation Models, and Logic
+Runtime: Pure HTML5, Vanilla CSS3, ES6 JavaScript, HTML5 Canvas 2D
+Dependencies: Zero external libraries or runtime frameworks
+Standards: RFC 768 (UDP), RFC 791 (IPv4), RFC 1071 (Internet Checksums)
+================================================================================
+
+
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+1.  SYSTEM ARCHITECTURE & DESIGN PHILOSOPHY
+2.  GLOBAL SHELL & NAVIGATION COMPONENTS
+3.  MODULE 1: TOPOLOGY & SANDBOX (TAB 1)
+    3.1.  Smart Alerts Card
+    3.2.  Transmission Parameters & Impairment Controls
+    3.3.  Central Orbital Network Canvas (Simulation Engine)
+    3.4.  Connection Diagnostics Suite & Receiver Socket Box
+    3.5.  Global Transit Routing Map Canvas
+    3.6.  Feature Rings & Browser-Native Architecture Badges
+    3.7.  Packet Event Timeline & State Flow
+4.  MODULE 2: UDP VS TCP COMPARATIVE SIMULATION (TAB 2)
+    4.1.  Dual-Lane Synchronized Canvases (UDP vs TCP)
+    4.2.  Handshake & Retransmission Dynamics
+    4.3.  Comparative Experiment Controls & Sliders
+    4.4.  Live Telemetry Counters
+    4.5.  Protocol Engineering Specification Matrix
+5.  MODULE 3: PACKET WORKSPACE & PROTOCOL INSPECTOR (TAB 3)
+    5.1.  Workspace Navigation & Status Pill
+    5.2.  Transit Path Canvas & End-to-End Route Indicator
+    5.3.  Packet Statistics Deck & Dynamic Telemetry Sidebar
+    5.4.  Five-Stage Datagram Assembly Progress Pipeline
+    5.5.  Layer Configuration Cards (IPv4, UDP, Application Payload)
+    5.6.  Interactive 32-Bit Datagram Structure Diagram
+    5.7.  Tri-Mode Protocol Inspector
+          - Mode A: Wireshark-Style Protocol Dissector Tree
+          - Mode B: Hexadecimal Dump with Memory Offsets & ASCII
+          - Mode C: Binary Bit-Level Matrix View
+    5.8.  Dynamic Field Detail Explainer Panel
+    5.9.  Action Controls (Build, Send to Sandbox, Inject Error, Reset)
+    5.10. Embedded Event Log & Category Filters
+6.  MODULE 4: RFC 768 / RFC 1071 CHECKSUM ENGINE (TAB 4)
+    6.1.  12-Byte IPv4 Pseudo-Header Model
+    6.2.  16-Bit One's Complement Mathematical Addition Engine
+    6.3.  End-Around Carry Mechanics
+    6.4.  Checksum Animation Canvas & Visual Word Stack
+    6.5.  Step-by-Step Math Breakdown & Formula Traces
+    6.6.  16-Bit Binary Register Table
+    6.7.  Receiver Verification Proof (Sum = 0xFFFF)
+    6.8.  Corruption & Bit-Flip Demonstration
+7.  MODULE 5: KNOWLEDGE LAB & ASSESSMENT (TAB 5)
+    7.1.  Interactive Assessment Engine
+    7.2.  Live Score Tracking & Progress Bar
+    7.3.  Immediate Feedback & Engineering Rationales
+8.  CENTRALIZED STATE MANAGEMENT & CROSS-MODULE DATA FLOW
+9.  SUMMARY QUICK-REFERENCE TABLE
+
+
+================================================================================
+1. SYSTEM ARCHITECTURE & DESIGN PHILOSOPHY
+================================================================================
+UDP-Scope is designed from the ground up as a zero-dependency, self-contained
+educational and engineering platform for understanding Layer 4 User Datagram
+Protocol (UDP) transport mechanics.
+
+Key Engineering Tenets:
+- 100% In-Browser Execution:
+  All packet physics, network delays, loss models, checksum arithmetic, and
+  packet disassembling run entirely in the browser using client-side JavaScript
+  and HTML5 Canvas 2D. No server-side daemon or socket proxy is required.
+- Strict RFC Conformance:
+  - UDP Header fields conform exactly to RFC 768 (8 bytes: Source Port,
+    Destination Port, Length, Checksum).
+  - Checksum calculation strictly implements RFC 1071 (16-bit one's complement
+    addition with end-around carry across pseudo-header, header, and payload).
+  - IPv4 encapsulation references RFC 791 (20-byte base header, protocol 17).
+- Reactive Particle-Based Simulation:
+  Canvas animations use requestAnimationFrame() loops with delta timing,
+  particle emitter physics for packet drops, laser pulse trajectories for links,
+  and stateful packet objects that react dynamically to user impairment sliders.
+
+
+================================================================================
+2. GLOBAL SHELL & NAVIGATION COMPONENTS
+================================================================================
+File Location: index.html (Lines 11-37), src/style.css, src/app.js
+
+2.1. Header Branding (.app-header, .header-main, .nav-brand)
+- Function: Displays the application identity ("UDP-Scope: Network Protocol
+  Engineering & Telemetry Platform").
+- Components:
+  - Brand Orb: An SVG/CSS radial gradient emblem with an animated cyan aura.
+  - Title and Subtitle typography: High-contrast modern sans-serif branding.
+  - Sticky Navigation Shell: Backed by a dark translucent glassmorphism layer
+    (backdrop-filter: blur(16px)) that stays anchored during page scroll.
+
+2.2. Module Tab Bar (.nav-tabs-bar, .nav-tabs, .nav-tab)
+- Function: Provides instant client-side switching between the 5 primary tabs:
+  1. "Topology & Sandbox" (data-tab="sandbox")
+  2. "UDP vs TCP" (data-tab="comparison")
+  3. "Packet Workspace" (data-tab="packet")
+  4. "Checksum Engine" (data-tab="checksum")
+  5. "Knowledge Lab" (data-tab="quiz")
+- Internal Working (src/app.js: initTabs()):
+  - Listens to click events on all .nav-tab elements.
+  - Toggles the .active CSS class on the clicked tab and matching .tab-content.
+  - Triggers responsive canvas resizing callbacks (resizeNetCanvas(),
+    resizeCompareCanvases(), resizeCsCanvas(), resizePaNetCanvas()) to guarantee
+    crisp high-DPI canvas rendering immediately when a tab becomes visible.
+
+
+================================================================================
+3. MODULE 1: TOPOLOGY & SANDBOX (TAB 1)
+================================================================================
+File Location: index.html (Lines 40-337), src/app.js (Lines 117-680)
+
+The Topology & Sandbox module acts as a Network Operations Center (NOC) simulator
+allowing users to craft UDP datagrams, configure simulated network impairments,
+and observe packet propagation across an orbital network graph.
+
+3.1. Smart Alerts Card (.alerts-card)
+- Location: Top-left column of the NOC dashboard.
+- Function: Highlights instantaneous link health and protocol characteristics.
+- Sub-components:
+  - "Primary Link": Green indicator verifying full line-rate UDP throughput.
+  - "Latency / Jitter": Amber warning tracking buffer queueing variance under load.
+  - "Direct Transmission": Purple info indicator emphasizing 0-RTT transmission
+    (zero handshake overhead compared to TCP's 3-way handshake).
+
+3.2. Transmission Parameters & Impairment Controls (.transmission-ctrl-card)
+- Location: Lower-left column of the NOC dashboard.
+- Controls:
+  - Payload Message Input (#msg-input): Text message converted into datagram bytes.
+  - Packet Size (#packet-size): Size in bytes (1 to 65,507 bytes).
+  - Burst Count (#burst-count): Number of datagrams fired simultaneously (1-30).
+  - Simulated Delay Slider (#send-delay): Artificial link transit time (0-2000 ms).
+  - Simulated Loss Rate Slider (#loss-rate, #loss-rate-val): 0% to 100% loss.
+    Calculated via Math.random() < lossRate / 100 on packet departure.
+  - Jitter Amount Slider (#jitter-amount, #jitter-val): Random arrival time
+    variance (+/- 0 to 150 ms) simulating packet arrival variance.
+  - Bandwidth Limit Select (#bandwidth-limit): Throttles transfer rates
+    (Unlimited, 100 Mbps, 10 Mbps, 1 Mbps bottleneck).
+  - Network Presets (#network-condition):
+    - Perfect: 0% loss, 0 ms jitter.
+    - Lossy: 30% loss, 20 ms jitter.
+    - Congested: 50% loss, 80 ms jitter.
+    - Chaotic: 70% loss, 150 ms jitter with packet reordering.
+  - Mini Stats Matrix: Displays real-time counters for Total Packets Sent (#stat-sent),
+    Total Bytes Sent (#stat-bytes-sent), and Computed Throughput (#stat-throughput).
+
+3.3. Central Orbital Network Canvas (#net-canvas)
+- Location: Center column of the NOC dashboard.
+- Rendering Engine: Canvas 2D running a 60 FPS requestAnimationFrame loop.
+- Visual Features:
+  - Dynamic Orbit Rings: Concentric orbital rings with rotating satellite nodes
+    representing routing hops (Host A -> Edge Router R1 -> Server 1).
+  - Multi-Hop Routing Waypoints: Path nodes generated via getTopologyWaypoints()
+    reflecting chosen topology (direct, single-router, dual-router, or mesh).
+  - Four-State Packet Lifecycle:
+    1. QUEUED: Packets held momentarily in host/router transmission queue buffers.
+    2. TRANSMITTED: Glowing laser particles traveling along link vectors.
+    3. DROPPED: When a packet is lost, it detonates in mid-air with an animated
+       multi-particle red explosion effect (Particle class with gravity & decay).
+    4. DELIVERED: Reaches destination host; triggers a green ring glow pulse.
+  - Animation Speed Slider (#anim-speed): Adjusts physics clock from 0.5x to 3.0x.
+  - Status Indicators: Shows real-time status pills ("SENDER READY", "RECEIVER LISTENING").
+
+3.4. Connection Diagnostics Suite & Receiver Socket Box (.test-suite-card)
+- Location: Right column of the NOC dashboard.
+- Diagnostics Table:
+  - Simulated Download Bandwidth (256.42 Mbps) & Upload Bandwidth (98.21 Mbps).
+  - Latency / Ping (#stat-latency): Computed rolling average of delivered packet round-trips.
+  - Jitter (#stat-jitter-dyn): Current variance in packet inter-arrival times.
+  - Traceroute: Visualizes hop count (e.g. 12 hops).
+- Action Buttons:
+  - "Start Transmission (Send Packet)" (#btn-send): Dispatches a single datagram.
+  - "Send Burst" (#btn-burst): Simultaneously fires N packets as configured in burst-count.
+  - "Reset" (#btn-reset): Flushes all active packets, particles, and counters.
+- Protocol Toggles:
+  - Checksum Validation (#checksum-toggle): Simulates L4 CRC/checksum checks at receiver.
+  - Out-of-Order Detection (#ordering-toggle): Tracks sequence IDs to flag packets
+    arriving out of sequence (highlighting UDP's lack of native sequencing).
+- Receiver Live Telemetry & Log (#recv-telemetry-box, #recv-log):
+  - Tracks Delivered count (#stat-recv), Dropped count (#stat-lost),
+    Loss Percentage (#stat-loss-pct), and Out-of-Order count (#stat-ooo).
+  - Real-time scrolling terminal output showing timestamp, remote IP, port,
+    payload string, and validation status for every arriving packet.
+
+3.5. Global Transit Routing Map Canvas (#world-map-canvas)
+- Location: Bottom-center row.
+- Function: Renders a vector world map with pulsing ground stations (e.g., North America,
+  Europe, Asia, South America) connected by glowing bezier laser arcs. As packets
+  are sent in the sandbox, laser bursts travel across intercontinental cable routes.
+
+3.6. Feature Badges & Browser-Native Architecture (.feature-badges-card, .browser-native-card)
+- Location: Bottom-left and bottom-right rows.
+- Function: Highlights key platform engineering principles:
+  - "Reliable": Pure client-side garbage-collected simulation with zero memory leaks.
+  - "High Speed": Emphasizes UDP's zero connection establishment latency.
+  - "Accurate": Bit-accurate RFC 768 datagram layout.
+  - "Complete": Comprehensive telemetry suite.
+  - "Native In-Browser Runtime": Zero installation, no daemon agents, runs anywhere.
+
+3.7. Packet Event Timeline & State Flow (#timeline, #btn-clear-timeline)
+- Location: Bottom of Tab 1.
+- Function: Chronological visual timeline recording every transmission event
+  (Packet Queued, Router Transit, Packet Delivered, Packet Dropped, Checksum Error).
+  Hovering over any timeline node inspects detailed packet metadata.
+
+
+================================================================================
+4. MODULE 2: UDP VS TCP COMPARATIVE SIMULATION (TAB 2)
+================================================================================
+File Location: index.html (Lines 338-493), src/app.js (Lines 685-980)
+
+This module provides a live, synchronized side-by-side benchmark contrasting
+UDP's connectionless best-effort delivery against TCP's connection-oriented,
+guaranteed-delivery sliding window.
+
+4.1. Dual-Lane Synchronized Canvases (#udp-lane-canvas, #tcp-lane-canvas)
+- Lane 1 (UDP - User Datagram Protocol):
+  - Canvas: #udp-lane-canvas.
+  - Mode: Fire-and-Forget.
+  - Behavior: Packets stream continuously from left (Client) to right (Server).
+    Packets subjected to loss drop instantly and disappear. The sender does NOT
+    track them, receives NO acknowledgments, and never attempts retransmission.
+- Lane 2 (TCP - Transmission Control Protocol):
+  - Canvas: #tcp-lane-canvas.
+  - Mode: Sliding Window with ARQ (Automatic Repeat reQuest).
+  - Behavior:
+    1. Initial 3-way handshake simulation (SYN -> SYN-ACK -> ACK).
+    2. Data segments stream with sequence numbers.
+    3. As segments reach the server, small cyan ACK packets flow in reverse
+       (right-to-left) back to the sender.
+    4. If a data segment is dropped (red flash), the sender notices the missing
+       ACK, triggers a timeout timer, and automatically retransmits the lost packet.
+
+4.2. Experiment Controls & Sliders (.cmp-controls-card)
+- "Start Experiment" (#btn-compare-start) / "Stop" (#btn-compare-stop): Launches
+  or halts the concurrent simulation race.
+- Simulated Loss Rate (#cmp-loss, #cmp-loss-val): Configurable from 0% to 80%
+  to demonstrate how packet loss impacts throughput and latency on both protocols.
+- Simulation Speed (#cmp-speed, #cmp-speed-val): Slow-motion (0.5x) to high-speed (3x).
+
+4.3. Live Telemetry Counters (.cmp-live-stats)
+- UDP Card (#cmp-stat-card.udp-card):
+  - Datagrams Sent (#cmp-udp-sent)
+  - Delivered (#cmp-udp-recv)
+  - Lost (#cmp-udp-lost)
+  - Retransmissions (#cmp-udp-retry): Stays at 0 (illustrating no retransmissions).
+- TCP Card (#cmp-stat-card.tcp-card):
+  - Packets Sent (#cmp-tcp-sent)
+  - Delivered (#cmp-tcp-recv)
+  - Lost (Triggered Retransmit) (#cmp-tcp-lost)
+  - ACKs Returned (#cmp-tcp-acks)
+
+4.4. Protocol Specification Matrix (.cmp-table)
+- A 10-point side-by-side comparison matrix covering: Connection State,
+  Header Overhead (8B vs 20-60B), Delivery Reliability, Packet Ordering,
+  Flow Control, and Primary Use Cases.
+
+
+================================================================================
+5. MODULE 3: PACKET WORKSPACE & PROTOCOL INSPECTOR (TAB 3)
+================================================================================
+File Location: index.html (Lines 494-940), src/app.js (Lines 985-1750)
+
+The Packet Workspace is a full-featured datagram constructor and Wireshark-style
+protocol inspection workbench.
+
+5.1. Navigation & Status Pill (.pa-navbar, #pa-status-pill, #pa-status-text)
+- Displays current assembly status ("Packet Ready", "Validating", "Bit Error Injected")
+  and dynamic byte badges for IPv4 Header (20B), UDP Header (8B), and Payload.
+
+5.2. Live Network Topology & Datagram Transit Canvas (#pa-net-canvas)
+- Visualizes the physical link path between Sender Host (192.168.1.10:5000)
+  through Gateway Router (192.168.1.1 | MTU 1500) to Receiver Host (192.168.1.20:8080).
+- "Animate Transit" Button (#btn-net-transit): Sends the currently assembled datagram
+  on a step-by-step visual journey across the network.
+
+5.3. Packet Statistics Deck & Dynamic Telemetry Sidebar (.pa-side-telemetry)
+- Statistics Cards:
+  - IPv4 Header: 20 bytes fixed (RFC 791).
+  - UDP Header: 8 bytes fixed (RFC 768).
+  - Payload Size (#pa-stat-payload): Live calculation of payload byte length.
+  - Total Packet Size (#pa-stat-total): 20 + 8 + Payload (in bytes and on-wire bits).
+- Telemetry Sidebar (.pa-info-sidebar):
+  - Displays formatted table of Source/Dest IP, Source/Dest Port, Protocol 17,
+    UDP Length, IPv4 Total Length, Checksum word, and Checksum Status Pill.
+
+5.4. Five-Stage Datagram Assembly Progress Pipeline (.pa-stage-tracker-card)
+- Stepped interactive walkthrough illustrating protocol encapsulation:
+  - Stage 1: Application Data — User string/data loaded into application memory.
+  - Stage 2: UDP Header Attachment — Source/Dest ports, UDP length, checksum computed.
+  - Stage 3: IPv4 Header Attachment — Network layer IP addressing, TTL, protocol 17 added.
+  - Stage 4: Encapsulation — L2 framing parameters calculated.
+  - Stage 5: Ready for Transmission — Finalized binary datagram queued for socket write.
+- Controls: Prev (#btn-stage-prev), Play/Pause (#btn-stage-play), Next (#btn-stage-next),
+  Replay (#btn-stage-replay).
+
+5.5. Layer Configuration Inputs (.pa-inputs-col)
+- IPv4 Layer Configuration:
+  - Source IP (#src-ip): Configurable host IP (default 192.168.1.10).
+  - Destination IP (#dst-ip): Target host IP (default 192.168.1.20).
+  - TTL (Hop Limit) (#ttl): Time-To-Live integer (1 to 255).
+  - Protocol: Read-only "17 (0x11 UDP)".
+- UDP Layer Configuration:
+  - Source Port (#src-port): 1 to 65535, with preset quick-picks (Custom 5000,
+    Dynamic 49152, Client 54321).
+  - Destination Port (#dst-port): With well-known UDP service presets:
+    Port 53 (DNS), 67 (DHCP Server), 68 (DHCP Client), 69 (TFTP), 123 (NTP),
+    161 (SNMP), 514 (Syslog), 1194 (OpenVPN), 5353 (mDNS), 8080 (Custom).
+  - Checksum (#checksum-val): Computed 16-bit 1's complement value.
+- Application Payload Data:
+  - Payload Presets: Buttons for "Text", "DNS Query", "NTP Packet", and "Game Sync".
+  - Textarea (#payload-data): Custom editable payload.
+  - Live Counters: Characters (#pb-char-count), Payload bytes (#pb-byte-count),
+    Total datagram size (#pb-total-size).
+
+5.6. Interactive 32-Bit Datagram Structure Diagram (#pa-interactive-diagram)
+- Renders an RFC 768 bit-aligned grid (Bits 0 to 31 across columns):
+  - Row 1: Source Port (Bits 0-15) | Destination Port (Bits 16-31)
+  - Row 2: Length (Bits 0-15)      | Checksum (Bits 16-31)
+  - Row 3+: Payload Data Octets
+- Hovering or clicking on any field dynamically populates the Field Detail Explainer.
+
+5.7. Tri-Mode Protocol Inspector (.pa-inspector-card)
+- Tab 1: Wireshark-Style Protocol Dissector Tree (#wireshark-tree):
+  - Multi-tier expandable/collapsible tree mimicking Wireshark packet dissections:
+    > Frame (Physical Layer metadata)
+    > Ethernet II (MAC addressing, Type 0x0800 IPv4)
+    > Internet Protocol Version 4 (Src/Dst IP, TTL, Protocol 17, Header Checksum)
+    > User Datagram Protocol (Src/Dst Port, Length, Checksum)
+    > Data / Payload (Raw application bytes)
+- Tab 2: Hexadecimal Dump View (#pa-interactive-hex):
+  - Classical hex editor layout: 16-byte memory offset (0000, 0010, 0020...),
+    individual byte hex pairs (e.g. 48 65 6C 6C 6F...), and ASCII sidebar decode.
+  - Hovering over any hex token highlights the corresponding protocol field!
+- Tab 3: Binary Bit Stream View (#pa-interactive-binary):
+  - Bit-by-bit view colored by layer (IPv4 bits in blue, UDP bits in purple,
+    Payload bits in green).
+
+5.8. Dynamic Field Detail Explainer Panel (#field-detail-panel)
+- Displays deep engineering notes when any packet field is selected:
+  - Layer Badge (#fd-layer-badge) & Field Name (#fd-name)
+  - Bit Width (#fd-width) (e.g. 16 Bits / 2 Bytes)
+  - Current Value in Decimal and Hex (#fd-val)
+  - Engineering Purpose (#fd-desc)
+  - RFC Standard Specification & Examples (#fd-example)
+
+5.9. Action Controls (.pa-bottom-actions)
+- Assemble Packet (#btn-build-packet): Compiles all input fields into an ArrayBuffer.
+- Send to Sandbox (#btn-send-built): Injects the constructed datagram directly
+  into the Tab 1 Sandbox simulation and switches tabs automatically!
+- Inject Bit Error (#btn-inject-error): Flips random bits in the payload to demonstrate
+  instant checksum invalidation.
+- Reset Packet (#btn-reset-packet): Restores default clean packet parameters.
+
+5.10. Embedded Event Log (#pb-eventlog)
+- Chronological inspection journal supporting category filtering ("All", "Build",
+  "Send", "Error", "Info") with an event counter and clear button.
+
+
+================================================================================
+6. MODULE 4: RFC 768 / RFC 1071 CHECKSUM ENGINE (TAB 4)
+================================================================================
+File Location: index.html (Lines 943-1049), src/app.js (Lines 1755-2450)
+
+This module provides an interactive visual and mathematical simulator of the
+Internet Checksum algorithm defined in RFC 768 and RFC 1071.
+
+6.1. The 12-Byte IPv4 Pseudo-Header
+RFC 768 specifies that UDP checksums must cover a 12-byte "pseudo-header" to ensure
+that misrouted datagrams (e.g. corrupted IP addresses) are rejected:
+- Source IPv4 Address (4 bytes / two 16-bit words)
+- Destination IPv4 Address (4 bytes / two 16-bit words)
+- Zero Padding (1 byte: 0x00) + Protocol Number (1 byte: 17 / 0x11) = 1 word
+- UDP Length (2 bytes / one 16-bit word)
+
+6.2. 16-Bit One's Complement Addition Engine
+The engine computes:
+  Sum = Pseudo-Header Words + UDP Header Words + Payload Words
+- Words are 16 bits wide (big-endian).
+- If the payload has an odd number of bytes, a 0x00 pad byte is appended.
+- End-Around Carry: If addition exceeds 16 bits (sum > 0xFFFF), the overflow
+  bits (sum >> 16) are wrapped and added back to the lowest 16 bits:
+    sum = (sum & 0xFFFF) + (sum >> 16)
+- Checksum Inversion: The final checksum is the bitwise NOT (~sum & 0xFFFF).
+  If the result is 0x0000, RFC 768 mandates transmitting it as 0xFFFF (since 0x0000
+  signifies "checksum omitted").
+
+6.3. Checksum Animation Canvas (#cs-canvas)
+- An animated Canvas 2D visualization rendering a vertical stack of 16-bit words.
+- Words are color-coded:
+  - Cyan: IPv4 Pseudo-Header words
+  - Purple: UDP Header words
+  - Green: Payload data words
+  - Gold: Running accumulated 16-bit sum
+- A pulsing carry indicator animates end-around carry additions in real time.
+
+6.4. Step-by-Step Math Breakdown (#cs-steps-list)
+- Detailed textual ledger showing every intermediate addition:
+  Step N: 0xXXXX + 0xYYYY = 0xZZZZ [Carry: +1 -> 0xAAAA]
+
+6.5. 16-Bit Binary Register View (#cs-bit-table)
+- Visualizes 16 distinct bit columns (Bit 15 down to Bit 0) for each word,
+  allowing students to visually inspect bit transitions and carries.
+
+6.6. Receiver Verification Proof (#cs-verify-section, #cs-verify-canvas)
+- The Receiver sums ALL incoming words PLUS the received checksum.
+- Mathematical Proof:
+  Since Checksum = ~Sum,
+  Receiver Sum = Sum + Checksum = Sum + (~Sum) = 0xFFFF (All 1s in binary).
+- In 1's complement arithmetic, 0xFFFF represents negative zero. Inverting 0xFFFF
+  yields 0x0000, mathematically proving 100% datagram integrity!
+
+6.7. Corruption & Bit-Flip Demonstration (#cs-btn-corrupt)
+- Inverts a single random bit in the payload without recalculating the checksum.
+- When verified, the receiver sum does NOT equal 0xFFFF. The engine flags an
+  immediate CHECKSUM MISMATCH / INTEGRITY ERROR, illustrating how UDP detects
+  damaged data.
+
+
+================================================================================
+7. MODULE 5: KNOWLEDGE LAB & ASSESSMENT (TAB 5)
+================================================================================
+File Location: index.html (Lines 1050-1067), src/app.js (Lines 2455-2720)
+
+An interactive assessment suite evaluating mastery of UDP and network transport
+engineering principles.
+
+7.1. Assessment Structure (#quiz-questions-list)
+- Features 6 comprehensive multiple-choice technical questions covering:
+  1. RFC 768 Checksum Receiver Verification Value (0xFFFF).
+  2. Maximum unfragmented UDP payload over standard IPv4 (65,507 bytes:
+     65,535 total IP length - 20B IPv4 header - 8B UDP header).
+  3. Demultiplexing mechanisms (Port numbers).
+  4. UDP vs TCP trade-offs in real-time gaming & VoIP.
+  5. IP fragmentation vs UDP layer responsibilities.
+  6. UDP pseudo-header contents and purpose.
+
+7.2. Scoring & Progress Tracking (#quiz-score-val, #quiz-progress-fill)
+- Dynamically calculates score (0 to 6) and animates a gradient progress bar.
+- Selecting an option immediately locks the choice, highlights green (correct) or
+  red (incorrect), and displays an exhaustive technical explanation rationale.
+- "Reset Quiz" (#btn-quiz-reset): Clears selections to allow retaking.
+
+
+================================================================================
+8. CENTRALIZED STATE MANAGEMENT & CROSS-MODULE DATA FLOW
+================================================================================
+File Location: src/app.js (Lines 90-115)
+
+All interactive elements share a single reactive JavaScript state object (`State`):
+- `State.packets`: Active in-flight datagram objects on the Canvas.
+- `State.particles`: Active explosion and delivery particle effects.
+- `State.bytesSent`, `State.packetsDelivered`, `State.packetsLost`: Global metrics.
+- `State.lossRate`, `State.delay`, `State.jitter`: Impairment parameters.
+- `State.selectedTopology`, `State.selectedRoute`: Active network graph routing.
+- `State.comparisonRunning`: Controls the Tab 2 TCP vs UDP race engine.
+
+Cross-Module Integration:
+- Clicking "Send to Sandbox" in Tab 3 (Packet Workspace) passes the exact
+  custom-assembled datagram to `State.packets`, triggers a departure particle,
+  switches the view to Tab 1 (Topology & Sandbox), and plays the live orbital transit!
+
+
+================================================================================
+9. SUMMARY QUICK-REFERENCE TABLE
+================================================================================
+Component Name            | Tab    | Primary Responsibility
+--------------------------+--------+--------------------------------------------
+Header & Navigation       | Global | Branding, glassmorphic shell, module tabs
+Smart Alerts Card         | Tab 1  | 0-RTT, link status, and buffer queue alerts
+Transmission Parameters   | Tab 1  | Payload, size, burst, loss & jitter sliders
+Central Orbit Canvas      | Tab 1  | 60 FPS particle simulation of packet transit
+Connection Diagnostics    | Tab 1  | Live ping/jitter/bandwidth & receiver log
+Global Transit Map        | Tab 1  | Intercontinental laser routing arcs
+Event Timeline            | Tab 1  | Chronological state transition ledger
+Dual-Lane Compare Canvas  | Tab 2  | UDP (fire-and-forget) vs TCP (ARQ/ACK) race
+Compare Matrix Table      | Tab 2  | 10-point technical protocol specification
+Packet Workspace Nav      | Tab 3  | Encapsulation status pill & layer byte tags
+Transit Path Canvas       | Tab 3  | End-to-end socket path visualization
+Assembly Stage Tracker    | Tab 3  | 5-stage interactive datagram assembly pipeline
+Layer Configuration Cards | Tab 3  | IPv4, UDP, and Payload presets & field inputs
+32-Bit Datagram Diagram   | Tab 3  | RFC 768 bit-aligned grid (Bits 0-31)
+Tri-Mode Inspector        | Tab 3  | Wireshark Dissector Tree / Hex Dump / Binary
+Field Explainer Panel     | Tab 3  | In-depth RFC notes for selected packet field
+Checksum Input Panel      | Tab 4  | 12B Pseudo-header, 8B UDP, and Payload inputs
+Checksum Animation Canvas | Tab 4  | 16-bit word addition stack & end-around carry
+Receiver Verify Section   | Tab 4  | Mathematical proof of 0xFFFF checksum match
+Knowledge Lab Quiz        | Tab 5  | 6-question assessment with instant rationales
+================================================================================
+End of Architectural Component Guide
+================================================================================
