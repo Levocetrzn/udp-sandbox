@@ -2,9 +2,19 @@
 
 An interactive, animated educational sandbox for understanding the **User Datagram Protocol (UDP)**.
 
-## 🚀 How to Open
+## 🌐 Live Demo
 
-Just double-click `index.html` — no build tools, no dependencies, pure HTML/CSS/JS.
+Try the interactive sandbox directly in your browser:
+**👉 [https://levocetrzn.github.io/udp-sandbox/](https://levocetrzn.github.io/udp-sandbox/)**
+
+## 🚀 How to Run Locally
+
+Simply clone the repo and open `index.html` in any modern web browser — no build tools, server, or dependencies required!
+```bash
+git clone https://github.com/Levocetrzn/udp-sandbox.git
+cd udp-sandbox
+# Open index.html in your browser
+```
 
 ## 🗂️ Project Structure
 
