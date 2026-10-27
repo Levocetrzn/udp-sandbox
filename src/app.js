@@ -250,8 +250,7 @@ function drawNetNode(ctx, x, y, icon, col, title, subtitle) {
 const State = {
   packetsSent: 0, packetsReceived: 0, packetsLost: 0, packetsOOO: 0,
   bytesSent: 0, latencies: [], sequenceNum: 0,
-  animSpeed: 1, lossRate: 0, networkCondition: 'perfect',
-  jitter: 0, bandwidth: 'unlimited',
+  animSpeed: 1, lossRate: 0, networkCondition: 'perfect', jitter: 0,
   selectedTopology: 'single-router',
   selectedRoute: 'primary',
   selectedSource: 'client1',
@@ -3789,11 +3788,6 @@ if ($('jitter-amount')) {
     State.jitter = parseInt(e.target.value);
     if ($('jitter-val')) $('jitter-val').textContent = `${State.jitter} ms`;
     if ($('stat-jitter-dyn')) $('stat-jitter-dyn').textContent = `${State.jitter} ms`;
-  });
-}
-if ($('bandwidth-limit')) {
-  $('bandwidth-limit').addEventListener('change', e => {
-    State.bandwidth = e.target.value;
   });
 }
 if ($('network-condition')) {

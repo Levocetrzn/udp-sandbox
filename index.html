@@ -111,20 +111,9 @@
                 </div>
               </div>
 
-              <div class="ctrl-row-split">
-                <div class="noc-form-group">
-                  <label for="jitter-amount">Jitter: <b id="jitter-val">0 ms</b></label>
-                  <input type="range" id="jitter-amount" class="noc-range" min="0" max="150" value="0" />
-                </div>
-                <div class="noc-form-group">
-                  <label for="bandwidth-limit">Bandwidth Limit</label>
-                  <select id="bandwidth-limit" class="noc-select">
-                    <option value="unlimited">Unlimited (1 Gbps)</option>
-                    <option value="100mbps">100 Mbps Fast Eth</option>
-                    <option value="10mbps">10 Mbps Throttle</option>
-                    <option value="1mbps">1 Mbps Bottleneck</option>
-                  </select>
-                </div>
+              <div class="noc-form-group">
+                <label for="jitter-amount">Jitter: <b id="jitter-val">0 ms</b></label>
+                <input type="range" id="jitter-amount" class="noc-range" min="0" max="150" value="0" />
               </div>
 
               <div class="noc-form-group">
@@ -187,18 +176,6 @@
             
             <div class="test-rows-table">
               <div class="test-row">
-                <span class="test-row-key"><span class="t-icon">↓</span> Bandwidth (Download)</span>
-                <span class="test-row-val">256.42 Mbps</span>
-                <span class="test-row-status status-green">Optimal</span>
-              </div>
-
-              <div class="test-row">
-                <span class="test-row-key"><span class="t-icon">↑</span> Bandwidth (Upload)</span>
-                <span class="test-row-val">98.21 Mbps</span>
-                <span class="test-row-status status-green">Optimal</span>
-              </div>
-
-              <div class="test-row">
                 <span class="test-row-key"><span class="t-icon">⇄</span> Ping (Latency)</span>
                 <span class="test-row-val" id="stat-latency">8 ms</span>
                 <span class="test-row-status status-green">Optimal</span>
@@ -207,12 +184,6 @@
               <div class="test-row">
                 <span class="test-row-key"><span class="t-icon">∿</span> Jitter</span>
                 <span class="test-row-val" id="stat-jitter-dyn">2 ms</span>
-                <span class="test-row-status status-green">Optimal</span>
-              </div>
-
-              <div class="test-row">
-                <span class="test-row-key"><span class="t-icon">⤹</span> Traceroute</span>
-                <span class="test-row-val">12 hops</span>
                 <span class="test-row-status status-green">Optimal</span>
               </div>
             </div>
