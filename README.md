@@ -20,11 +20,16 @@ cd udp-sandbox
 
 ```
 udp-sandbox/
-├── index.html       ← Main entry point
+├── index.html                ← Main web entry point (pure HTML/CSS/JS)
+├── COMPONENTS_EXPLAINED.txt  ← Comprehensive technical guide for all components
 └── src/
-    ├── style.css    ← Dark-theme UI styles & animations
-    └── app.js       ← Full simulation engine + Canvas animations
+    ├── style.css             ← Dark-theme UI styles & animations
+    └── app.js                ← Full simulation engine + Canvas animations
 ```
+
+## 📖 Component Documentation
+
+For an in-depth breakdown of every UI widget, Canvas 2D simulation loop, RFC 768/1071 checksum formula, and data flow architecture, read **[COMPONENTS_EXPLAINED.txt](COMPONENTS_EXPLAINED.txt)**.
 
 ## 🧪 Features
 
