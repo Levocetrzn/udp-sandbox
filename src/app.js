@@ -465,11 +465,6 @@ function updateStats() {
   const throughput = total > 0 ? (State.bytesSent / Math.max(1, (performance.now() / 1000))).toFixed(0) : 0;
   $('stat-throughput').textContent = `${throughput} B/s`;
 
-  // Update Top Bar & NOC KPI indicators
-  if ($('top-kpi-avail'))  $('top-kpi-avail').textContent = total > 0 ? `${(100 - parseFloat(lossPct)).toFixed(2)}%` : '99.98%';
-  if ($('top-kpi-ping'))   $('top-kpi-ping').textContent = `${avgLat || 8} ms`;
-  if ($('top-kpi-jitter')) $('top-kpi-jitter').textContent = `${State.jitter || 2} ms`;
-  if ($('top-kpi-loss'))   $('top-kpi-loss').textContent = `${lossPct}%`;
   if ($('stat-jitter-dyn')) $('stat-jitter-dyn').textContent = `${State.jitter || 2} ms`;
 
   // Update KPI cards in performance tab
