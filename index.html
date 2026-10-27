@@ -264,64 +264,7 @@
 
       </div>
 
-      <!-- Bottom Row: 4 Feature Rings (Left) + Global Routing Map (Center) + Native Architecture Card (Right) -->
-      <div class="noc-bottom-row">
 
-        <!-- 4 Circular Badges -->
-        <div class="noc-card feature-badges-card">
-          <div class="feature-badge-item">
-            <div class="feature-ring ring-blue">🛡️</div>
-            <span class="feature-name">Reliable</span>
-            <span class="feature-desc">Zero memory leaks</span>
-          </div>
-
-          <div class="feature-badge-item">
-            <div class="feature-ring ring-cyan">⚡</div>
-            <span class="feature-name">High Speed</span>
-            <span class="feature-desc">Zero-RTT transmission</span>
-          </div>
-
-          <div class="feature-badge-item">
-            <div class="feature-ring ring-purple">🎯</div>
-            <span class="feature-name">Accurate</span>
-            <span class="feature-desc">Bit-accurate RFC 768</span>
-          </div>
-
-          <div class="feature-badge-item">
-            <div class="feature-ring ring-green">📊</div>
-            <span class="feature-name">Complete</span>
-            <span class="feature-desc">Full telemetry suite</span>
-          </div>
-        </div>
-
-        <!-- Global Network World Map with Animated Laser Flight Arcs -->
-        <div class="noc-card world-map-card">
-          <div class="noc-card-header">
-            <span class="noc-card-title">🌐 Global Transit Routing Map</span>
-            <span class="route-hops-badge">Active Orbital Links</span>
-          </div>
-          <div class="world-map-wrap">
-            <canvas id="world-map-canvas" height="150"></canvas>
-          </div>
-        </div>
-
-        <!-- Browser Native Summary Card -->
-        <div class="noc-card browser-native-card">
-          <div class="native-speed-icon">
-            <svg viewBox="0 0 48 48" class="speed-svg"><path d="M24 6C14.06 6 6 14.06 6 24c0 4.12 1.41 7.91 3.77 10.95l2.25-1.92A15.86 15.86 0 0 1 9 24c0-8.28 6.72-15 15-15s15 6.72 15 15c0 3.32-1.09 6.38-2.92 8.87l2.22 1.95A17.88 17.88 0 0 0 42 24c0-9.94-8.06-18-18-18z"/><circle cx="24" cy="24" r="3"/><line x1="24" y1="24" x2="33" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          </div>
-          <div class="native-content">
-            <h4 class="native-title">Native In-Browser Runtime</h4>
-            <ul class="native-list">
-              <li>✓ Zero installation required.</li>
-              <li>✓ No external daemon agents.</li>
-              <li>✓ Instant client-side execution.</li>
-            </ul>
-          </div>
-          <div class="native-check-badge">✓</div>
-        </div>
-
-      </div>
 
       <!-- State Flow Timeline Panel -->
       <div class="timeline-panel noc-card">
@@ -941,9 +884,22 @@
 
   <!-- ─── TAB 4: Checksum Engine ────────────────────────────── -->
   <div class="tab-content" id="tab-checksum">
+
+    <!-- Top Toolbar: View Detail Toggle & Trace Mode -->
+    <div class="cs-header-controls">
+      <div class="cs-pill-group">
+        <button class="cs-mode-btn active" id="cs-mode-sender">📤 Sender Computation Trace</button>
+        <button class="cs-mode-btn" id="cs-mode-receiver">📥 Receiver Verification Trace</button>
+      </div>
+      <div class="cs-pill-group">
+        <button class="cs-toggle-btn active" id="cs-view-simple">Simple View</button>
+        <button class="cs-toggle-btn" id="cs-view-detailed">Detailed (Binary &amp; Carry)</button>
+      </div>
+    </div>
+
     <div class="cs-layout">
 
-      <!-- ── Left: Input Panel ── -->
+      <!-- ── Left: Input & Math Explainer Panel ── -->
       <div class="cs-input-panel">
         <div class="cs-panel-title">🔐 RFC 768 / RFC 1071 Checksum Engine</div>
         <p class="cs-panel-sub">Inspect how 16-bit one's-complement addition mathematically computes and verifies UDP datagram integrity.</p>
@@ -982,65 +938,113 @@
 
         <div class="cs-field-group">
           <div class="cs-field-label">Application Payload Data</div>
-          <textarea class="cs-textarea font-mono" id="cs-payload" rows="3">Hello UDP-Scope!</textarea>
+          <textarea class="cs-textarea font-mono" id="cs-payload" rows="2">Hello UDP-Scope!</textarea>
+          
+          <!-- Interactive Byte Corruption Selector -->
+          <div class="cs-corrupt-picker-wrap">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+              <span class="cs-field-name" style="font-size:0.8rem">Click any byte to toggle error (click selected to deselect):</span>
+              <span id="cs-corrupt-status-badge" style="font-size:0.75rem;color:#22c55e;font-weight:700">✓ No error (Intact)</span>
+            </div>
+            <div class="cs-byte-picker-container" id="cs-byte-chips"></div>
+            <div style="display:flex;gap:6px;margin-top:4px">
+              <button class="btn btn-sm btn-ghost" id="cs-btn-corrupt-rand" type="button">🎲 Random Byte</button>
+              <button class="btn btn-sm btn-ghost" id="cs-btn-corrupt-clear" type="button">✓ Clear (No Error)</button>
+            </div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-dim);margin-top:4px;cursor:pointer">
+              <input type="checkbox" id="cs-compensating-chk" />
+              <span>Compensating error (+1 and -1 bits cancel out)</span>
+            </label>
+            <div class="cs-limitation-note" style="margin-top:4px">
+              ⚠️ <strong>Limitation:</strong> Two opposite bit flips in the same column cancel out and bypass verification.
+            </div>
+          </div>
         </div>
 
         <div class="cs-btn-row">
-          <button class="btn btn-primary" id="cs-btn-compute">▶ Step-by-Step Compute</button>
+          <button class="btn btn-primary" id="cs-btn-compute">▶ Compute Checksum</button>
+          <button class="btn btn-success" id="cs-btn-verify">🔍 Verify Intact (0xFFFF)</button>
           <button class="btn btn-warning" id="cs-btn-corrupt">💥 Corrupt &amp; Verify</button>
           <button class="btn btn-danger"  id="cs-btn-reset">↺ Reset</button>
         </div>
 
         <!-- Computed Result -->
         <div class="cs-result-box" id="cs-result-box">
-          <div class="cs-result-label">Calculated Checksum Word</div>
+          <div class="cs-result-label" id="cs-result-title">Calculated Checksum Word</div>
           <div class="cs-result-value" id="cs-result-val">—</div>
           <div class="cs-result-status" id="cs-result-status"></div>
         </div>
 
-        <!-- Speed control -->
-        <div class="cs-speed-row">
-          <label for="cs-speed">Calculation Speed:</label>
-          <input type="range" id="cs-speed" min="0.5" max="4" step="0.5" value="1" />
-          <span id="cs-speed-val">1x</span>
+        <!-- Mathematical "Why It Works" Educational Card -->
+        <div class="cs-why-card">
+          <div class="cs-why-header">💡 Why Does the Receiver Land on 0xFFFF?</div>
+          <p>The checksum is the bitwise inverse of the sum: <code>Checksum = ~Sum</code>.</p>
+          <p style="margin:4px 0">Every 0 added to 1 gives 1. Therefore: <code>Sum + (~Sum) = 0xFFFF</code> (all 16 bits set to 1).</p>
+          <div class="cs-mini-demo">
+            <span>Try a 4-bit demonstration:</span>
+            <div style="display:flex;align-items:center;gap:6px">
+              <label>X =</label>
+              <input type="number" id="cs-mini-x" min="0" max="15" value="11" class="cs-mini-input" />
+              <span class="font-mono" id="cs-mini-result" style="color:var(--warning)">1011 + 0100 = 1111 (0xF)</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- ── Center: Animation Canvas ── -->
+      <!-- ── Center: Animation Canvas & Walkthrough Controls ── -->
       <div class="cs-canvas-panel">
         <div class="cs-canvas-header">
           <span id="cs-anim-label">16-Bit Word Addition Trace</span>
           <div class="cs-step-row" id="cs-step-pills"></div>
         </div>
-        <canvas id="cs-canvas"></canvas>
+
+        <canvas id="cs-canvas" height="430"></canvas>
+
         <div class="cs-canvas-legend">
-          <span class="cs-leg cs-leg-pseudo">IPv4 Pseudo-Header Words</span>
-          <span class="cs-leg cs-leg-udp">UDP Header Words</span>
-          <span class="cs-leg cs-leg-payload">Payload Words</span>
-          <span class="cs-leg cs-leg-sum">Running Accumulated Sum</span>
+          <span class="cs-leg cs-leg-pseudo">IPv4 Pseudo-Header</span>
+          <span class="cs-leg cs-leg-udp">UDP Header</span>
+          <span class="cs-leg cs-leg-payload">Payload</span>
+          <span class="cs-carry-badge">⚡ End-Around Carry (+1)</span>
+          <span class="cs-leg cs-leg-sum">Running Sum</span>
+        </div>
+
+        <!-- "Walk Me Through It" Step Controls -->
+        <div class="cs-walk-bar">
+          <div class="cs-walk-buttons">
+            <button class="cs-walk-btn" id="cs-walk-first" title="First step">⏮</button>
+            <button class="cs-walk-btn" id="cs-walk-prev" title="Previous step">◀ Back</button>
+            <button class="cs-walk-btn" id="cs-walk-play" title="Play / Pause">⏸ Pause</button>
+            <button class="cs-walk-btn" id="cs-walk-next" title="Next step">Next ▶</button>
+            <button class="cs-walk-btn" id="cs-walk-last" title="Last step">⏭</button>
+          </div>
+          <span class="cs-walk-step-info" id="cs-walk-info">Step 1 of 17</span>
+          <div class="cs-speed-row" style="margin:0">
+            <label for="cs-speed" style="font-size:0.8rem">Speed:</label>
+            <input type="range" id="cs-speed" min="0.5" max="4" step="0.5" value="1" style="width:70px" />
+            <span id="cs-speed-val" style="font-size:0.8rem">1x</span>
+          </div>
         </div>
       </div>
 
-      <!-- ── Right: Step Breakdown & Receiver Check ── -->
+      <!-- ── Right: Grouped Step Breakdown & Receiver Verification ── -->
       <div class="cs-steps-panel">
-        <div class="cs-panel-title">📋 Step-by-Step Math Breakdown</div>
+        <div class="cs-panel-title">📋 Step-by-Step Breakdown</div>
+
+        <!-- Active Step Context Sidebar Explanation -->
+        <div class="cs-sidebar-card" id="cs-step-explainer">
+          Click "Compute Checksum" to begin tracing one's-complement addition.
+        </div>
+
+        <!-- Grouped Sections List -->
         <div class="cs-steps-list" id="cs-steps-list">
-          <div class="cs-step-placeholder">Click "Step-by-Step Compute" to trace addition.</div>
+          <div class="cs-step-placeholder">Addition trace will appear here.</div>
         </div>
 
-        <!-- Bit-level view -->
-        <div class="cs-bit-section">
-          <div class="cs-panel-title" style="margin-bottom:8px">🔢 16-Bit Binary Representation</div>
-          <div class="cs-bit-table-wrap" id="cs-bit-table">
-            <div class="cs-step-placeholder">Binary 16-bit registers will appear here.</div>
-          </div>
-        </div>
-
-        <!-- Verification section -->
+        <!-- Receiver Verification Trace Section -->
         <div class="cs-verify-section" id="cs-verify-section" style="display:none">
-          <div class="cs-panel-title">🔍 Receiver Verification (Check = 0xFFFF)</div>
+          <div class="cs-panel-title">🔍 Receiver Verification (Target = 0xFFFF)</div>
           <div class="cs-verify-body" id="cs-verify-body"></div>
-          <canvas id="cs-verify-canvas" height="130"></canvas>
+          <canvas id="cs-verify-canvas" height="110"></canvas>
         </div>
       </div>
 

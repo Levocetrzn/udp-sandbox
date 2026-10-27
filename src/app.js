@@ -25,10 +25,165 @@ function bin16(n)   {
   return `${s.slice(0,4)} ${s.slice(4,8)} ${s.slice(8,12)} ${s.slice(12,16)}`;
 }
 
-function calcChecksum(str) {
-  let s = 0;
-  for (let i = 0; i < str.length; i++) s = (s + str.charCodeAt(i)) & 0xFFFF;
-  return '0x' + s.toString(16).toUpperCase().padStart(4,'0');
+function ip2words(ip) {
+  const parts = (ip || '0.0.0.0').split('.').map(Number);
+  const b = [parts[0] || 0, parts[1] || 0, parts[2] || 0, parts[3] || 0];
+  return [(b[0] << 8) | b[1], (b[2] << 8) | b[3]];
+}
+
+function computeChecksumSteps(srcIP, dstIP, srcPort, dstPort, payload, opts = {}) {
+  const isReceiver = (opts.includeChecksumWord !== undefined);
+  const steps = [];
+  let sum = 0;
+
+  function addStep(word, label, group, desc, isCorrupted = false) {
+    const prev = sum;
+    const rawSum = prev + word;
+    const hasCarry = rawSum > 0xFFFF;
+    const carry = hasCarry ? (rawSum >> 16) : 0;
+    let newSum = (rawSum & 0xFFFF) + carry;
+    while (newSum > 0xFFFF) {
+      newSum = (newSum & 0xFFFF) + (newSum >> 16);
+    }
+    sum = newSum;
+    steps.push({
+      word: word & 0xFFFF,
+      prevSum: prev & 0xFFFF,
+      rawSum,
+      hasCarry,
+      carry,
+      runningSum: sum & 0xFFFF,
+      label,
+      group,
+      desc,
+      isCorrupted
+    });
+  }
+
+  // Convert payload to bytes safely via TextEncoder (handles UTF-8)
+  let bytes;
+  if (typeof payload === 'string') {
+    bytes = Array.from(new TextEncoder().encode(payload));
+  } else if (payload instanceof Uint8Array || Array.isArray(payload)) {
+    bytes = Array.from(payload);
+  } else {
+    bytes = [];
+  }
+
+  // Apply byte corruption if requested
+  const corruptedIndices = new Set();
+  if (opts.corruptedByteIdx !== undefined && opts.corruptedByteIdx !== null && opts.corruptedByteIdx >= 0 && opts.corruptedByteIdx < bytes.length) {
+    const cIdx = opts.corruptedByteIdx;
+    corruptedIndices.add(cIdx);
+    if (opts.compensating) {
+      // Find companion byte with same parity (both high or both low byte of 16-bit word) to cancel column sum:
+      const otherIdx = (cIdx + 2 < bytes.length)
+        ? (cIdx + 2)
+        : (cIdx >= 2 ? cIdx - 2 : null);
+
+      if (otherIdx !== null) {
+        corruptedIndices.add(otherIdx);
+        // +1 in one word column, -1 in companion word column -> column sum remains mathematically identical
+        bytes[cIdx] = (bytes[cIdx] + 1) & 0xFF;
+        bytes[otherIdx] = (bytes[otherIdx] - 1) & 0xFF;
+      } else {
+        bytes[cIdx] ^= (opts.corruptXor || 0xFF);
+      }
+    } else {
+      bytes[cIdx] ^= (opts.corruptXor || 0xFF);
+    }
+  }
+
+  const payloadByteLen = bytes.length;
+  const udpLen = 8 + payloadByteLen;
+
+  // 1. IPv4 Pseudo-Header (12 bytes = 6 words)
+  const [s1, s2] = ip2words(srcIP);
+  const [d1, d2] = ip2words(dstIP);
+  addStep(s1, `Source IP High: ${srcIP.split('.').slice(0, 2).join('.')}`, 'pseudo',
+    'Upper 16 bits of the 32-bit IPv4 source address borrowed from Layer 3.');
+  addStep(s2, `Source IP Low: ${srcIP.split('.').slice(2, 4).join('.')}`, 'pseudo',
+    'Lower 16 bits of the 32-bit IPv4 source address borrowed from Layer 3.');
+  addStep(d1, `Dest IP High: ${dstIP.split('.').slice(0, 2).join('.')}`, 'pseudo',
+    'Upper 16 bits of the 32-bit IPv4 destination address borrowed from Layer 3.');
+  addStep(d2, `Dest IP Low: ${dstIP.split('.').slice(2, 4).join('.')}`, 'pseudo',
+    'Lower 16 bits of the 32-bit IPv4 destination address borrowed from Layer 3.');
+  addStep(0x0011, `Zero (0x00) + Protocol: 17 (0x11 UDP)`, 'pseudo',
+    'One zero byte concatenated with the IPv4 Protocol number 17 (UDP).');
+  addStep(udpLen, `UDP Length: ${udpLen} bytes`, 'pseudo',
+    'Total length of UDP header (8 bytes) + payload bytes.');
+
+  const pseudoSubtotal = sum;
+
+  // 2. UDP Header (8 bytes = 4 words)
+  addStep(srcPort & 0xFFFF, `Source Port: ${srcPort}`, 'udp',
+    'Port on the sending host (ephemeral client port or service port).');
+  addStep(dstPort & 0xFFFF, `Dest Port: ${dstPort}`, 'udp',
+    'Destination port on the receiving host (listening service).');
+  addStep(udpLen, `UDP Length: ${udpLen} bytes`, 'udp',
+    'Length field in the UDP header itself (must match pseudo-header length).');
+
+  const csumWord = isReceiver ? (opts.includeChecksumWord & 0xFFFF) : 0x0000;
+  const csumLabel = isReceiver
+    ? `Transmitted Checksum: ${hex16(csumWord)}`
+    : `Checksum Placeholder: 0x0000`;
+  const csumDesc = isReceiver
+    ? `Transmitted checksum placed into field for receiver 0xFFFF validation.`
+    : `Zeroed out during computation so field does not alter its own sum.`;
+  addStep(csumWord, csumLabel, 'udp', csumDesc);
+
+  const udpSubtotal = sum;
+
+  // 3. Application Payload Data Words
+  for (let i = 0; i < bytes.length; i += 2) {
+    const b1 = bytes[i];
+    const hasB2 = (i + 1 < bytes.length);
+    const b2 = hasB2 ? bytes[i + 1] : 0; // Pad odd payload with 0x00 at end (RFC 768)
+    const word = (b1 << 8) | b2;
+    const isCorrupted = corruptedIndices.has(i) || (hasB2 && corruptedIndices.has(i + 1));
+
+    const c1 = (b1 >= 32 && b1 <= 126) ? String.fromCharCode(b1) : `\\x${b1.toString(16).padStart(2, '0')}`;
+    const c2 = hasB2
+      ? ((b2 >= 32 && b2 <= 126) ? String.fromCharCode(b2) : `\\x${b2.toString(16).padStart(2, '0')}`)
+      : '<pad 0x00>';
+    const label = `Payload bytes [${i},${hasB2 ? i + 1 : 'pad'}]: '${c1}${c2}'`;
+    const desc = hasB2
+      ? `Two 8-bit bytes packed into 16-bit word (0x${b1.toString(16).padStart(2,'0')} 0x${b2.toString(16).padStart(2,'0')}).`
+      : `Odd payload byte length: final byte padded with 0x00 in low 8 bits (RFC 768).`;
+
+    addStep(word, label, 'payload', desc, isCorrupted);
+  }
+
+  const payloadSubtotal = sum;
+
+  // Checksum calculation: One's complement inversion (~sum)
+  let rawChecksum = (~sum) & 0xFFFF;
+  // RFC 768 rule: If computed checksum is 0x0000, transmit as 0xFFFF
+  let finalChecksum = (rawChecksum === 0x0000) ? 0xFFFF : rawChecksum;
+
+  return {
+    steps,
+    sum,
+    rawChecksum,
+    checksum: finalChecksum,
+    checksumHex: hex16(finalChecksum),
+    subtotals: {
+      pseudo: pseudoSubtotal,
+      udp: udpSubtotal,
+      payload: payloadSubtotal
+    },
+    bytes,
+    corruptedIndices: Array.from(corruptedIndices),
+    payloadByteLen,
+    udpLen
+  };
+}
+
+function calcChecksum(srcIP, dstIP, srcPort, dstPort, payload) {
+  if (arguments.length === 1 && typeof srcIP === 'string') {
+    return computeChecksumSteps('192.168.1.10', '192.168.1.20', 5000, 8080, srcIP).checksumHex;
+  }
+  return computeChecksumSteps(srcIP, dstIP, srcPort, dstPort, payload).checksumHex;
 }
 
 // ── Smooth roundRect polyfill ─────────────────────────
@@ -744,6 +899,24 @@ let tcpLanePackets = [];
 let compSendTimer  = null;
 let compAnimId     = null;
 let cmpAnimSpeed   = 1;
+let cmpTimeouts    = [];
+let tcpRipples     = [];
+let udpRipples     = [];
+
+function setCmpTimeout(fn, ms) {
+  const id = setTimeout(() => {
+    cmpTimeouts = cmpTimeouts.filter(t => t !== id);
+    if (!State.comparisonRunning) return;
+    fn();
+  }, ms);
+  cmpTimeouts.push(id);
+  return id;
+}
+
+function clearCmpTimeouts() {
+  cmpTimeouts.forEach(clearTimeout);
+  cmpTimeouts = [];
+}
 
 function resizeLaneCanvas(canvas) {
   if (!canvas) return;
@@ -755,30 +928,44 @@ function resizeLaneCanvas(canvas) {
 
 class LanePkt {
   constructor(canvas, ctx, opts) {
-    this.canvas   = canvas;
-    this.ctx      = ctx;
-    this.W        = canvas.width;
-    this.H        = canvas.height;
-    this.lost     = opts.lost || false;
-    this.ack      = opts.ack || false;
-    this.color    = opts.color || '#3b82f6';
-    this.speed    = opts.speed || 2.5;
-    this.dir      = opts.dir || 1; // 1: Left -> Right, -1: Right -> Left
-    this.label    = opts.label || '';
-    this.row      = opts.row || 0;
-    this.progress = this.dir === 1 ? 0 : 1;
-    this.done     = false;
-    this.exploded = false;
-    this.frags    = [];
+    this.canvas       = canvas;
+    this.ctx          = ctx;
+    this.W            = canvas.width;
+    this.H            = canvas.height;
+    this.lost         = opts.lost || false;
+    this.ack          = opts.ack || false;
+    this.color        = opts.color || '#3b82f6';
+    this.speed        = opts.speed || 2.5;
+    this.dir          = opts.dir || 1; // 1: Left -> Right, -1: Right -> Left
+    this.label        = opts.label || '';
+    this.row          = opts.row || 0;
+    this.onArrive     = opts.onArrive || null;
+    this.onDrop       = opts.onDrop || null;
+    this.progress     = this.dir === 1 ? 0 : 1;
+    this.done         = false;
+    this.exploded     = false;
+    this.arrived      = false;
+    this.dropped      = false;
+    this.arrivalTimer = 0;
+    this.frags        = [];
     this.dropTextTimer = 0;
   }
 
   update() {
     if (this.done) return;
+
+    if (this.arrived) {
+      this.arrivalTimer--;
+      if (this.arrivalTimer <= 0) {
+        this.done = true;
+      }
+      return;
+    }
+
     const step = (this.speed * 0.0035 * cmpAnimSpeed) * this.dir;
     this.progress += step;
 
-    // Drop trigger at 50% distance
+    // Drop trigger at 50% distance for forward packets marked lost
     if (this.dir === 1 && this.lost && this.progress >= 0.48 && !this.exploded) {
       this.exploded = true;
       this.done = true;
@@ -794,10 +981,28 @@ class LanePkt {
           col: this.color === '#22c55e' ? '#f59e0b' : '#ef4444'
         });
       }
+      if (!this.dropped) {
+        this.dropped = true;
+        if (this.onDrop) this.onDrop(this);
+      }
+      return;
     }
 
-    if ((this.dir === 1 && this.progress >= 1) || (this.dir === -1 && this.progress <= 0)) {
-      this.done = true;
+    // Arrival detection
+    if (this.dir === 1 && this.progress >= 1) {
+      this.progress = 1;
+      if (!this.arrived) {
+        this.arrived = true;
+        this.arrivalTimer = 4;
+        if (this.onArrive) this.onArrive(this);
+      }
+    } else if (this.dir === -1 && this.progress <= 0) {
+      this.progress = 0;
+      if (!this.arrived) {
+        this.arrived = true;
+        this.arrivalTimer = 4;
+        if (this.onArrive) this.onArrive(this);
+      }
     }
   }
 
@@ -809,6 +1014,9 @@ class LanePkt {
 
     if (!this.exploded) {
       ctx.save();
+      if (this.arrived) {
+        ctx.globalAlpha = Math.max(0.2, this.arrivalTimer / 4);
+      }
       ctx.fillStyle = this.color;
       ctx.shadowColor = this.color;
       ctx.shadowBlur = 10;
@@ -862,6 +1070,24 @@ class LanePkt {
   }
 }
 
+function updateAndDrawRipples(ctx, ripples) {
+  if (!ctx || !ripples) return;
+  ripples.forEach(rp => {
+    ctx.save();
+    ctx.strokeStyle = rp.col;
+    ctx.globalAlpha = Math.max(0, rp.alpha);
+    ctx.lineWidth = 2;
+    ctx.shadowColor = rp.col;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(rp.x, rp.y, rp.r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    rp.r += 1.8 * cmpAnimSpeed;
+    rp.alpha -= 0.04 * cmpAnimSpeed;
+  });
+}
+
 function drawLaneBG(ctx, canvas, col, name) {
   if (!ctx || !canvas) return;
   const W = canvas.width, H = canvas.height;
@@ -906,99 +1132,157 @@ function startComparison() {
   State.comparisonRunning = true;
   udpLanePackets = [];
   tcpLanePackets = [];
+  tcpRipples = [];
+  udpRipples = [];
+  clearCmpTimeouts();
   State.udpSent = State.tcpSent = State.udpRecv = State.tcpRecv = State.udpLost = State.tcpLost = State.tcpAcks = 0;
+  updateCmpStats();
 
   resizeLaneCanvas(udpLC);
   resizeLaneCanvas(tcpLC);
-  const lossRate = parseInt($('cmp-loss').value) || 30;
 
   let row = 0;
-  compSendTimer = setInterval(() => {
+
+  function sendNextPair() {
     if (!State.comparisonRunning) return;
+    const lossRate = parseInt($('cmp-loss').value) || 30;
     const uLost = Math.random() * 100 < lossRate;
     const tLost = Math.random() * 100 < lossRate;
+    const rowOffset = (row % 3 - 1) * 16;
+    row++;
 
-    // UDP Packet (Fire-and-forget)
+    // UDP Packet (Fire-and-forget: No handshake, no ACKs, no retransmission)
     State.udpSent++;
     udpLanePackets.push(new LanePkt(udpLC, udpLCtx, {
       lost: uLost,
       color: '#3b82f6',
       speed: 3.2,
       label: 'UDP #' + State.udpSent,
-      row: (row % 3 - 1) * 16
+      row: rowOffset,
+      onDrop: () => {
+        State.udpLost++;
+        updateCmpStats();
+      },
+      onArrive: () => {
+        State.udpRecv++;
+        if (udpLC) {
+          udpRipples.push({ x: udpLC.width - 40, y: udpLC.height / 2, r: 14, alpha: 0.9, col: '#3b82f6' });
+        }
+        updateCmpStats();
+      }
     }));
-    if (uLost) State.udpLost++;
-    else State.udpRecv++;
 
-    // TCP Packet (ARQ with ACK feedback)
+    // TCP Packet (Reliable with true ACK feedback & ARQ retransmission)
+    // The receiver ONLY generates and sends ACK after receiving the packet!
     State.tcpSent++;
     const tcpSeq = State.tcpSent;
+
     tcpLanePackets.push(new LanePkt(tcpLC, tcpLCtx, {
       lost: tLost,
       color: '#22c55e',
-      speed: 2.2,
+      speed: 2.5,
       label: 'TCP #' + tcpSeq,
-      row: (row % 3 - 1) * 16
-    }));
-
-    if (tLost) {
-      State.tcpLost++;
-      // Retransmission after timeout
-      setTimeout(() => {
-        if (!State.comparisonRunning) return;
-        tcpLanePackets.push(new LanePkt(tcpLC, tcpLCtx, {
-          lost: false,
-          color: '#f59e0b',
-          speed: 2.2,
-          label: 'RETX #' + tcpSeq,
-          row: (row % 3 - 1) * 16
-        }));
-        State.tcpRecv++;
+      row: rowOffset,
+      onDrop: () => {
+        // Packet was dropped in flight. Receiver NEVER received it -> Receiver sends NO ACK!
+        State.tcpLost++;
         updateCmpStats();
 
-        // ACK returned for retransmission
-        setTimeout(() => {
+        // Sender's Retransmission Timeout (RTO) expires; Sender sends RETX packet
+        setCmpTimeout(() => {
+          if (!State.comparisonRunning) return;
+          tcpLanePackets.push(new LanePkt(tcpLC, tcpLCtx, {
+            lost: false,
+            color: '#f59e0b',
+            speed: 2.5,
+            label: 'RETX #' + tcpSeq,
+            row: rowOffset,
+            onArrive: () => {
+              // RETX arrived at Receiver!
+              State.tcpRecv++;
+              if (tcpLC) {
+                tcpRipples.push({ x: tcpLC.width - 40, y: tcpLC.height / 2, r: 14, alpha: 0.9, col: '#f59e0b' });
+              }
+              updateCmpStats();
+
+              // Receiver responds with ACK ONLY after receiving the retransmitted packet
+              setCmpTimeout(() => {
+                if (!State.comparisonRunning) return;
+                tcpLanePackets.push(new LanePkt(tcpLC, tcpLCtx, {
+                  ack: true,
+                  lost: false,
+                  speed: 2.6,
+                  dir: -1,
+                  color: '#06b6d4',
+                  label: 'ACK #' + tcpSeq,
+                  row: rowOffset,
+                  onArrive: () => {
+                    // ACK arrived back at Sender!
+                    State.tcpAcks++;
+                    if (tcpLC) {
+                      tcpRipples.push({ x: 40, y: tcpLC.height / 2, r: 14, alpha: 0.9, col: '#06b6d4' });
+                    }
+                    updateCmpStats();
+                  }
+                }));
+              }, 140 / cmpAnimSpeed);
+            }
+          }));
+        }, 650 / cmpAnimSpeed);
+      },
+      onArrive: () => {
+        // TCP packet arrived at Receiver!
+        State.tcpRecv++;
+        if (tcpLC) {
+          tcpRipples.push({ x: tcpLC.width - 40, y: tcpLC.height / 2, r: 14, alpha: 0.9, col: '#22c55e' });
+        }
+        updateCmpStats();
+
+        // Receiver sends ACK ONLY after receiving the packet
+        setCmpTimeout(() => {
           if (!State.comparisonRunning) return;
           tcpLanePackets.push(new LanePkt(tcpLC, tcpLCtx, {
             ack: true,
             lost: false,
-            speed: 2.4,
+            speed: 2.6,
             dir: -1,
             color: '#06b6d4',
-            label: 'ACK #' + tcpSeq
+            label: 'ACK #' + tcpSeq,
+            row: rowOffset,
+            onArrive: () => {
+              // ACK arrived back at Sender!
+              State.tcpAcks++;
+              if (tcpLC) {
+                tcpRipples.push({ x: 40, y: tcpLC.height / 2, r: 14, alpha: 0.9, col: '#06b6d4' });
+              }
+              updateCmpStats();
+            }
           }));
-          State.tcpAcks++;
-          updateCmpStats();
-        }, 550);
-      }, 700);
-    } else {
-      State.tcpRecv++;
-      setTimeout(() => {
-        if (!State.comparisonRunning) return;
-        tcpLanePackets.push(new LanePkt(tcpLC, tcpLCtx, {
-          ack: true,
-          lost: false,
-          speed: 2.4,
-          dir: -1,
-          color: '#06b6d4',
-          label: 'ACK #' + tcpSeq
-        }));
-        State.tcpAcks++;
-        updateCmpStats();
-      }, 550);
-    }
+        }, 140 / cmpAnimSpeed);
+      }
+    }));
 
-    row++;
     updateCmpStats();
-  }, 750);
+
+    // Schedule next packet pair
+    const interval = Math.max(400, 1100 / cmpAnimSpeed);
+    compSendTimer = setCmpTimeout(sendNextPair, interval);
+  }
+
+  // Start sending packets
+  sendNextPair();
 
   function loop() {
     if (!State.comparisonRunning) return;
     drawLaneBG(udpLCtx, udpLC, '#3b82f6', 'UDP');
+    updateAndDrawRipples(udpLCtx, udpRipples);
+    udpRipples = udpRipples.filter(rp => rp.alpha > 0);
     udpLanePackets.forEach(p => { p.update(); p.draw(); });
     udpLanePackets = udpLanePackets.filter(p => !(p.done && p.frags.length === 0 && p.dropTextTimer <= 0));
 
     drawLaneBG(tcpLCtx, tcpLC, '#22c55e', 'TCP');
+    updateAndDrawRipples(tcpLCtx, tcpRipples);
+    tcpRipples = tcpRipples.filter(rp => rp.alpha > 0);
     tcpLanePackets.forEach(p => { p.update(); p.draw(); });
     tcpLanePackets = tcpLanePackets.filter(p => !(p.done && p.frags.length === 0 && p.dropTextTimer <= 0));
 
@@ -1012,8 +1296,16 @@ function startComparison() {
 
 function stopComparison() {
   State.comparisonRunning = false;
-  if (compSendTimer) clearInterval(compSendTimer);
-  if (compAnimId) cancelAnimationFrame(compAnimId);
+  if (compSendTimer) {
+    clearTimeout(compSendTimer);
+    clearInterval(compSendTimer);
+    compSendTimer = null;
+  }
+  clearCmpTimeouts();
+  if (compAnimId) {
+    cancelAnimationFrame(compAnimId);
+    compAnimId = null;
+  }
 }
 
 function updateCmpStats() {
@@ -1235,7 +1527,7 @@ const FIELD_DEFS = {
     bits: '16 bits',
     byteStart: 26,
     byteEnd: 27,
-    getValue: p => `${p.checksum} ${bitErrorIdx >= 0 ? '❌ [CRC MISMATCH / CORRUPTED]' : '✅ [CORRECT / VALID]'}`,
+    getValue: p => `${p.checksum} ${bitErrorIdx >= 0 ? '❌ [CHECKSUM MISMATCH / CORRUPTED]' : '✅ [CORRECT / VALID]'}`,
     desc: '16-bit 1\'s complement checksum calculated across an IPv4 pseudo-header, the UDP header, and the payload. Detects data corruption in transit. If corrupt, receiving stack discards datagram silently.',
     example: 'RFC 768 / RFC 1071 internet checksum algorithm'
   },
@@ -1279,15 +1571,17 @@ function resizePaNetCanvas() {
 // ── Raw Packet Byte Generator ────────────────────────
 function getRawPacketBytes(p) {
   const payloadStr = p ? p.payload : 'Hello, UDP-Scope!';
-  const pb = [...payloadStr].map((c, i) =>
-    (bitErrorIdx >= 0 && i === bitErrorIdx) ? (c.charCodeAt(0) ^ 0xFF) : c.charCodeAt(0)
-  );
+  const pb = Array.from(new TextEncoder().encode(payloadStr));
+  if (bitErrorIdx >= 0 && bitErrorIdx < pb.length) {
+    pb[bitErrorIdx] ^= 0xFF;
+  }
   const len = 8 + pb.length;
   const srcIP = (p && p.srcIP) || '192.168.1.10';
   const dstIP = (p && p.dstIP) || '192.168.1.20';
   const srcPort = (p && p.srcPort) || 5000;
   const dstPort = (p && p.dstPort) || 8080;
   const ttl = (p && p.ttl) || 64;
+  const csNum = (p && p.checksum) ? (parseInt(p.checksum, 16) || 0) : 0;
 
   return [
     0x45, 0x00, 0x00, (len + 20) & 0xFFFF,
@@ -1297,13 +1591,15 @@ function getRawPacketBytes(p) {
     (srcPort >> 8) & 0xFF, srcPort & 0xFF,
     (dstPort >> 8) & 0xFF, dstPort & 0xFF,
     (len >> 8) & 0xFF, len & 0xFF,
-    0x00, 0x00,
+    (csNum >> 8) & 0xFF, csNum & 0xFF,
     ...pb
   ];
 }
 
-function buildHexDump(srcIP, dstIP, srcPort, dstPort, ttl, payload) {
-  const pb  = [...payload].map(c => c.charCodeAt(0));
+function buildHexDump(srcIP, dstIP, srcPort, dstPort, ttl, payload, csNum = 0) {
+  const pb = (typeof payload === 'string')
+    ? Array.from(new TextEncoder().encode(payload))
+    : Array.from(payload || []);
   const len = 8 + pb.length;
   const all = [
     0x45, 0x00, 0x00, len + 20,
@@ -1312,7 +1608,8 @@ function buildHexDump(srcIP, dstIP, srcPort, dstPort, ttl, payload) {
     ...dstIP.split('.').map(Number),
     (srcPort >> 8) & 0xFF, srcPort & 0xFF,
     (dstPort >> 8) & 0xFF, dstPort & 0xFF,
-    (len >> 8) & 0xFF, len & 0xFF, 0x00, 0x00,
+    (len >> 8) & 0xFF, len & 0xFF,
+    (csNum >> 8) & 0xFF, csNum & 0xFF,
     ...pb
   ];
   const lines = [];
@@ -1348,9 +1645,11 @@ async function buildAndVisualizePacket() {
   const dstPort = $('dst-port') ? (parseInt($('dst-port').value) || 8080) : 8080;
   const ttl     = $('ttl') ? (parseInt($('ttl').value) || 64) : 64;
   const payload = $('payload-data') ? ($('payload-data').value || 'Hello, UDP-Scope!') : 'Hello, UDP-Scope!';
-  const length  = 8 + payload.length;
+  const payloadBytes = Array.from(new TextEncoder().encode(payload));
+  const length  = 8 + payloadBytes.length;
 
-  const cs = calcChecksum(srcIP + dstIP + srcPort + dstPort + payload);
+  const cs = calcChecksum(srcIP, dstIP, srcPort, dstPort, payload);
+  const csNum = parseInt(cs, 16) || 0;
   if ($('checksum-val')) $('checksum-val').value = cs;
   if ($('total-length')) $('total-length').value = `${length + 20} bytes`;
 
@@ -1358,7 +1657,7 @@ async function buildAndVisualizePacket() {
   bitErrorIdx = -1;
 
   // Sync legacy dump & decoded fields
-  if ($('hex-dump')) $('hex-dump').textContent = buildHexDump(srcIP, dstIP, srcPort, dstPort, ttl, payload);
+  if ($('hex-dump')) $('hex-dump').textContent = buildHexDump(srcIP, dstIP, srcPort, dstPort, ttl, payload, csNum);
   updateDecodedFields(false);
   renderDatagramDiagram(false);
   renderWiresharkTree(builtPacket, false);
@@ -1371,7 +1670,7 @@ async function buildAndVisualizePacket() {
   selectPacketField(selectedFieldKey || 'udp_dst_port');
 
   updateStatusPill('ready', 'Packet Ready');
-  setStatusMessage(`✓ Datagram assembled: <b>${length + 20} bytes</b> [IPv4: 20B + UDP: 8B + Data: ${payload.length}B]. Ready for network transmission.`);
+  setStatusMessage(`✓ Datagram assembled: <b>${length + 20} bytes</b> [IPv4: 20B + UDP: 8B + Data: ${payloadBytes.length}B]. Ready for network transmission.`);
 
   pbLogEvent('build', `Datagram constructed: ${srcIP}:${srcPort} ➔ ${dstIP}:${dstPort}`,
     `Payload: "${payload.slice(0, 35)}" | Total Size: ${length + 20}B | Checksum: ${cs}`);
@@ -1383,16 +1682,18 @@ async function buildAndVisualizePacket() {
 // ── Inject Bit Error Routine ──────────────────────────
 function injectBitError() {
   if (!builtPacket) { buildAndVisualizePacket(); return; }
-  bitErrorIdx = randInt(0, builtPacket.payload.length - 1);
-  const corrupted = builtPacket.payload.split('').map((c, i) =>
-    i === bitErrorIdx ? String.fromCharCode(c.charCodeAt(0) ^ 0xFF) : c
-  ).join('');
+  const rawBytes = Array.from(new TextEncoder().encode(builtPacket.payload));
+  if (rawBytes.length === 0) return;
+  bitErrorIdx = randInt(0, rawBytes.length - 1);
+  const corruptedBytes = rawBytes.slice();
+  corruptedBytes[bitErrorIdx] ^= 0xFF;
+  const csNum = parseInt(builtPacket.checksum, 16) || 0;
 
   if ($('hex-dump')) {
     $('hex-dump').textContent = buildHexDump(
       builtPacket.srcIP, builtPacket.dstIP,
       builtPacket.srcPort, builtPacket.dstPort,
-      builtPacket.ttl, corrupted
+      builtPacket.ttl, corruptedBytes, csNum
     );
   }
   updateDecodedFields(true);
@@ -1407,10 +1708,11 @@ function injectBitError() {
   selectPacketField('udp_csum');
 
   updateStatusPill('error', 'Bit Error Detected');
-  setStatusMessage(`💥 Bit error injected at payload byte <b>#${bitErrorIdx}</b> ('${builtPacket.payload[bitErrorIdx]}' inverted). Checksum verification failed — receiving stack will silently discard!`);
+  const byteChar = (rawBytes[bitErrorIdx] >= 32 && rawBytes[bitErrorIdx] <= 126) ? String.fromCharCode(rawBytes[bitErrorIdx]) : `0x${rawBytes[bitErrorIdx].toString(16)}`;
+  setStatusMessage(`💥 Bit error injected at payload byte <b>#${bitErrorIdx}</b> ('${byteChar}' inverted). Checksum verification failed — receiving stack will silently discard!`);
 
   pbLogEvent('error', `Bit error injected at payload byte #${bitErrorIdx}`,
-    `Inverted byte: '${builtPacket.payload[bitErrorIdx]}' ➔ Checksum mismatch! Datagram will be dropped.`);
+    `Inverted byte: '${byteChar}' ➔ Checksum mismatch! Datagram will be dropped.`);
 
   // Animate transit with drop effect
   triggerNetworkTransitAnim(true);
@@ -1471,7 +1773,7 @@ function updatePacketTelemetry() {
   if (csumPill) {
     if (hasErr) {
       csumPill.className = 'pa-csum-pill error';
-      csumPill.textContent = 'CRC MISMATCH (DROP)';
+      csumPill.textContent = 'CHECKSUM MISMATCH (DROP)';
     } else {
       csumPill.className = 'pa-csum-pill valid';
       csumPill.textContent = 'VALID CHECKSUM';
@@ -2183,8 +2485,8 @@ function renderWiresharkTree(p, hasError) {
         <div class="ws-tree-item">Source Port: <b>${p.srcPort}</b></div>
         <div class="ws-tree-item">Destination Port: <b>${p.dstPort}</b></div>
         <div class="ws-tree-item">Length: <b>${p.length}</b> bytes (Header + Payload)</div>
-        <div class="ws-tree-item">Checksum: <b>${p.checksum}</b> ${hasError ? '<span style="color:#ef4444;font-weight:700">[INCORRECT - CRC MISMATCH]</span>' : '<span style="color:#22c55e;font-weight:700">[CORRECT]</span>'}</div>
-        <div class="ws-tree-item">UDP Payload: (${p.payload.length} bytes)</div>
+        <div class="ws-tree-item">Checksum: <b>${p.checksum}</b> ${hasError ? '<span style="color:#ef4444;font-weight:700">[INCORRECT - CHECKSUM MISMATCH]</span>' : '<span style="color:#22c55e;font-weight:700">[CORRECT]</span>'}</div>
+        <div class="ws-tree-item">UDP Payload: (${(new TextEncoder().encode(p.payload)).length} bytes)</div>
       </div>
     </div>
 
@@ -2192,10 +2494,10 @@ function renderWiresharkTree(p, hasError) {
     <div class="ws-tree-node expanded">
       <div class="ws-tree-header" onclick="this.parentElement.classList.toggle('expanded')">
         <span class="ws-tree-icon">▶</span>
-        <span><b>Data:</b> (${p.payload.length} bytes) "${p.payload.slice(0, 25)}${p.payload.length > 25 ? '…' : ''}"</span>
+        <span><b>Data:</b> (${(new TextEncoder().encode(p.payload)).length} bytes) "${p.payload.slice(0, 25)}${p.payload.length > 25 ? '…' : ''}"</span>
       </div>
       <div class="ws-tree-children">
-        <div class="ws-tree-item">Data Length: ${p.payload.length} bytes</div>
+        <div class="ws-tree-item">Data Length: ${(new TextEncoder().encode(p.payload)).length} bytes</div>
         <div class="ws-tree-item">Raw String: "${p.payload}"</div>
       </div>
     </div>
@@ -2205,6 +2507,7 @@ function renderWiresharkTree(p, hasError) {
 function updateDecodedFields(hasError) {
   if (!builtPacket) return;
   const p = builtPacket;
+  const payBytesLen = (new TextEncoder().encode(p.payload)).length;
   const groups = [
     { cls: 'ip-field-row', rows: [
       ['IPv4 Version', '4'], ['IHL (Header Len)', '20 bytes (5×4)'],
@@ -2218,7 +2521,7 @@ function updateDecodedFields(hasError) {
     ]},
     { cls: 'pay-field-row', rows: [
       ['Payload String', `"${p.payload.slice(0, 30)}${p.payload.length > 30 ? '…' : ''}"`],
-      ['Payload Bytes', `${p.payload.length} bytes`]
+      ['Payload Bytes', `${payBytesLen} bytes`]
     ]}
   ];
 
@@ -2364,307 +2667,869 @@ function pbSetPayloadType(type) {
 }
 
 
-//  MODULE 6: CHECKSUM TAB FULL ENGINE
+// ══════════════════════════════════════════════════════
+//  MODULE 6: CHECKSUM TAB FULL ENGINE (ENHANCED & EDUCATIONAL)
 // ══════════════════════════════════════════════════════
 const csCanvas   = $('cs-canvas');
 const csCtx      = csCanvas ? csCanvas.getContext('2d') : null;
 const csVCanvas  = $('cs-verify-canvas');
 const csVCtx     = csVCanvas ? csVCanvas.getContext('2d') : null;
-let csAnimId     = null;
-let csSpeed      = 1;
-let csSteps      = [];
-let csActiveStep = -1;
-let csCorrupt    = false;
 
-function ip2words(ip) {
-  const b = ip.split('.').map(Number);
-  return [(b[0] << 8) | b[1], (b[2] << 8) | b[3]];
-}
-
-function computeChecksumSteps(srcIP, dstIP, srcPort, dstPort, payload) {
-  const steps = [];
-  let sum = 0;
-
-  function addWord(word, label, group) {
-    const prev = sum;
-    sum += word;
-    while (sum > 0xFFFF) sum = (sum & 0xFFFF) + (sum >> 16);
-    steps.push({ word, runningSum: sum, prevSum: prev, label, group });
-  }
-
-  // 12-byte Pseudo-Header
-  const [s1, s2] = ip2words(srcIP);
-  const [d1, d2] = ip2words(dstIP);
-  addWord(s1, `Src IP High: ${srcIP.split('.').slice(0,2).join('.')}`, 'pseudo');
-  addWord(s2, `Src IP Low: ${srcIP.split('.').slice(2,4).join('.')}`, 'pseudo');
-  addWord(d1, `Dst IP High: ${dstIP.split('.').slice(0,2).join('.')}`, 'pseudo');
-  addWord(d2, `Dst IP Low: ${dstIP.split('.').slice(2,4).join('.')}`, 'pseudo');
-  addWord(0x0011, `Zero (0) + Protocol: 17 (UDP)`, 'pseudo');
-
-  const udpLen = 8 + payload.length;
-  addWord(udpLen, `UDP Length: ${udpLen} bytes`, 'pseudo');
-
-  // UDP Header
-  addWord(srcPort, `Source Port: ${srcPort}`, 'udp');
-  addWord(dstPort, `Dest Port: ${dstPort}`, 'udp');
-  addWord(udpLen,  `UDP Length: ${udpLen}`, 'udp');
-  addWord(0x0000,  `Checksum placeholder: 0x0000`, 'udp');
-
-  // Payload
-  const bytes = [...payload].map(c => c.charCodeAt(0));
-  for (let i = 0; i < bytes.length; i += 2) {
-    const b1 = bytes[i];
-    const b2 = (i + 1 < bytes.length) ? bytes[i + 1] : 0;
-    const w  = (b1 << 8) | b2;
-    const c1 = String.fromCharCode(b1);
-    const c2 = (i + 1 < bytes.length) ? String.fromCharCode(b2) : '\\0';
-    addWord(w, `Payload: '${c1}${c2}'`, 'payload');
-  }
-
-  const checksum = (~sum) & 0xFFFF;
-  return { steps, checksum, sum };
-}
+let csAnimId             = null;
+let csRunToken           = 0;
+let csSpeed              = 1;
+let csViewMode           = 'simple';    // 'simple' | 'detailed'
+let csTraceMode          = 'sender';    // 'sender' | 'receiver'
+let csSteps              = [];
+let csActiveStep         = -1;
+let csIsPlaying          = false;
+let csCorruptedIdx       = null;
+let csCompensating       = false;
+let csLastSenderChecksum = null;
+let csLastResultObj      = null;
 
 function resizeCsCanvas() {
-  if (!csCanvas) return;
-  csCanvas.width  = csCanvas.parentElement.clientWidth - 28;
-  csCanvas.height = 420;
+  if (!csCanvas || !csCanvas.parentElement) return;
+  csCanvas.width  = Math.max(340, csCanvas.parentElement.clientWidth - 28);
+  csCanvas.height = 430;
 }
 
-async function runChecksumCompute() {
-  csCorrupt = false;
-  const srcIP   = $('cs-src-ip').value   || '192.168.1.10';
-  const dstIP   = $('cs-dst-ip').value   || '192.168.1.20';
-  const srcPort = parseInt($('cs-src-port').value) || 5000;
-  const dstPort = parseInt($('cs-dst-port').value) || 8080;
-  const payload = $('cs-payload').value || 'Hello UDP-Scope!';
+// ── Render Interactive Payload Byte Chips ────────────────
+function renderCsByteChips() {
+  const container = $('cs-byte-chips');
+  if (!container) return;
+  const payload = $('cs-payload') ? ($('cs-payload').value || '') : '';
+  const bytes = Array.from(new TextEncoder().encode(payload));
+  container.innerHTML = '';
 
-  const { steps, checksum } = computeChecksumSteps(srcIP, dstIP, srcPort, dstPort, payload);
-  csSteps = steps;
-
-  $('cs-result-val').textContent    = 'Computing…';
-  $('cs-result-val').className      = 'cs-result-value';
-  $('cs-result-status').textContent = '';
-  $('cs-result-status').className   = 'cs-result-status';
-  $('cs-result-box').className      = 'cs-result-box';
-  $('cs-verify-section').style.display = 'none';
-
-  const pills = $('cs-step-pills');
-  pills.innerHTML = '';
-  steps.forEach((s, i) => {
-    const pill = document.createElement('span');
-    pill.className = 'cs-step-pill';
-    pill.textContent = i + 1;
-    pill.addEventListener('click', () => highlightStep(i));
-    pills.appendChild(pill);
-  });
-
-  $('cs-steps-list').innerHTML = '';
-  $('cs-bit-table').innerHTML  = '';
-
-  if (csAnimId) cancelAnimationFrame(csAnimId);
-  resizeCsCanvas();
-
-  const delay = Math.max(80, 500 / csSpeed);
-  for (let i = 0; i < steps.length; i++) {
-    csActiveStep = i;
-    highlightStep(i);
-    addStepCard(steps[i], i);
-    addBitRow(steps[i], i);
-    drawChecksumCanvas(steps, i);
-    await sleep(delay);
+  if (bytes.length === 0) {
+    container.innerHTML = '<span style="font-size:0.78rem;color:var(--text-muted)">Payload is empty</span>';
+    updateCorruptBadge();
+    return;
   }
 
-  // Result
-  $('cs-result-val').textContent = hex16(checksum);
-  $('cs-result-val').className   = 'cs-result-value pass';
-  $('cs-result-status').textContent = '✅ Checksum computed successfully';
-  $('cs-result-status').className   = 'cs-result-status pass';
-  $('cs-result-box').className      = 'cs-result-box pass';
-  $('cs-anim-label').textContent    = `Checksum Word = ${hex16(checksum)} ✅`;
+  // Validate or reset index if out of range
+  if (csCorruptedIdx !== null && (csCorruptedIdx < 0 || csCorruptedIdx >= bytes.length)) {
+    csCorruptedIdx = null;
+  }
 
-  document.querySelectorAll('.cs-step-pill').forEach(p => p.classList.add('done'));
-  drawChecksumCanvas(steps, steps.length - 1, checksum);
+  const corruptedSet = new Set();
+  if (csCorruptedIdx !== null && csCorruptedIdx >= 0 && csCorruptedIdx < bytes.length) {
+    corruptedSet.add(csCorruptedIdx);
+    if (csCompensating) {
+      const otherIdx = (csCorruptedIdx + 2 < bytes.length)
+        ? (csCorruptedIdx + 2)
+        : (csCorruptedIdx >= 2 ? csCorruptedIdx - 2 : null);
+      if (otherIdx !== null) corruptedSet.add(otherIdx);
+    }
+  }
+
+  bytes.forEach((b, idx) => {
+    const chip = document.createElement('span');
+    const isCorrupt = corruptedSet.has(idx);
+    chip.className = `cs-byte-chip ${isCorrupt ? 'corrupted' : ''}`;
+    const ch = (b >= 32 && b <= 126) ? String.fromCharCode(b) : `0x${b.toString(16).padStart(2,'0')}`;
+    chip.textContent = `#${idx} '${ch}'`;
+    chip.title = `Byte ${idx}: 0x${b.toString(16).padStart(2,'0').toUpperCase()} ${isCorrupt ? '(Corrupted - Click to deselect / remove error)' : '(Click to inject error)'}`;
+    chip.addEventListener('click', () => {
+      // Toggle corruption: clicking the active corrupted byte deselects it to have NO error!
+      csCorruptedIdx = (csCorruptedIdx === idx) ? null : idx;
+      renderCsByteChips();
+      if (csTraceMode === 'receiver') {
+        runCorruptVerify({ forceCorrupt: false });
+      }
+    });
+    container.appendChild(chip);
+  });
+
+  updateCorruptBadge();
 }
 
-function highlightStep(idx) {
-  csActiveStep = idx;
-  document.querySelectorAll('.cs-step-pill').forEach((p, i) => {
-    p.classList.toggle('active', i === idx);
-    if (i < idx) p.classList.add('done');
-  });
-  document.querySelectorAll('.cs-step-item').forEach((c, i) => {
-    c.classList.toggle('active-step', i === idx);
-  });
-  if (csSteps.length > 0) drawChecksumCanvas(csSteps, idx);
+function updateCorruptBadge() {
+  const badge = $('cs-corrupt-status-badge');
+  if (!badge) return;
+  const payload = $('cs-payload') ? ($('cs-payload').value || '') : '';
+  const bytes = Array.from(new TextEncoder().encode(payload));
+
+  if (csCorruptedIdx !== null && csCorruptedIdx >= 0 && csCorruptedIdx < bytes.length) {
+    const ch = (bytes[csCorruptedIdx] >= 32 && bytes[csCorruptedIdx] <= 126)
+      ? String.fromCharCode(bytes[csCorruptedIdx])
+      : `0x${bytes[csCorruptedIdx].toString(16)}`;
+    badge.textContent = `💥 Error injected at Byte #${csCorruptedIdx} ('${ch}')`;
+    badge.style.color = '#ef4444';
+  } else {
+    badge.textContent = `✓ No error injected (Intact)`;
+    badge.style.color = '#22c55e';
+  }
 }
 
-function addStepCard(step, idx) {
+// ── "Why It Works" Mini-Demo ─────────────────────────────
+function updateCsMiniDemo() {
+  const input = $('cs-mini-x');
+  const resSpan = $('cs-mini-result');
+  if (!input || !resSpan) return;
+  const val = Math.max(0, Math.min(15, parseInt(input.value) || 0));
+  const inv = (~val) & 0xF;
+  const b1 = val.toString(2).padStart(4, '0');
+  const b2 = inv.toString(2).padStart(4, '0');
+  resSpan.textContent = `${b1} (${val}) + ${b2} (${inv}) = 1111 (15 / 0xF)`;
+}
+
+// ── Build Grouped Sections for Step Breakdown List ────────
+function renderCsGroupedSteps(steps, activeIdx, isReceiver) {
   const list = $('cs-steps-list');
-  const card = document.createElement('div');
-  card.className = 'cs-step-item';
-  const groupColors = { pseudo: '#6366f1', udp: '#2563eb', payload: '#be123c' };
-  card.style.borderLeftColor = groupColors[step.group] || '#58a6ff';
-  card.style.borderLeftWidth = '4px';
-  card.innerHTML = `
-    <div style="font-weight:700;font-size:0.95rem">${idx + 1}. ${step.label}</div>
-    <div class="cs-step-hex">+ ${hex16(step.word)} ➔ Sum = ${hex16(step.runningSum)}</div>
-    <div style="font-size:0.84rem;color:#a0aec0;font-family:monospace">${bin16(step.word)}</div>
-  `;
-  card.addEventListener('click', () => highlightStep(idx));
-  list.appendChild(card);
-  list.scrollTop = list.scrollHeight;
+  if (!list) return;
+  list.innerHTML = '';
+
+  const groups = [
+    {
+      id: 'pseudo',
+      icon: '📘',
+      title: 'IPv4 Pseudo-Header (12 bytes)',
+      desc: 'Borrowed from the IP Layer 3 header to ensure routing integrity (proves packet was not misdirected); never transmitted in the UDP datagram.',
+      steps: steps.filter(s => s.group === 'pseudo')
+    },
+    {
+      id: 'udp',
+      icon: '📗',
+      title: 'UDP Header (8 bytes)',
+      desc: isReceiver
+        ? 'Standard UDP header; the Checksum field contains the transmitted checksum word from the sender.'
+        : 'Standard UDP header; the Checksum field is zeroed (0x0000) during sender calculation so it does not alter its own sum.',
+      steps: steps.filter(s => s.group === 'udp')
+    },
+    {
+      id: 'payload',
+      icon: '📕',
+      title: 'Application Payload',
+      desc: 'Application data bytes paired into 16-bit words (padded with 0x00 at the end if byte length is odd, per RFC 768).',
+      steps: steps.filter(s => s.group === 'payload')
+    }
+  ];
+
+  let stepCounter = 0;
+  groups.forEach(g => {
+    const groupEl = document.createElement('div');
+    groupEl.className = 'cs-section-group';
+
+    const header = document.createElement('div');
+    header.className = 'cs-section-header';
+    header.innerHTML = `<span>${g.icon} ${g.title}</span><span style="font-size:0.75rem;color:var(--text-dim)">▼</span>`;
+    header.addEventListener('click', () => groupEl.classList.toggle('collapsed'));
+    groupEl.appendChild(header);
+
+    const descEl = document.createElement('div');
+    descEl.className = 'cs-section-desc';
+    descEl.textContent = g.desc;
+    groupEl.appendChild(descEl);
+
+    const body = document.createElement('div');
+    body.className = 'cs-section-body';
+
+    let lastSum = 0;
+    g.steps.forEach(s => {
+      const idx = stepCounter++;
+      lastSum = s.runningSum;
+      const card = document.createElement('div');
+      card.className = `cs-step-item ${s.hasCarry ? 'has-carry' : ''} ${s.isCorrupted ? 'is-corrupt' : ''} ${idx === activeIdx ? 'active-step' : ''}`;
+      card.dataset.stepIdx = idx;
+
+      let content = `
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-weight:700;font-size:0.86rem">${idx + 1}. ${s.label}</span>
+          ${s.hasCarry ? '<span class="cs-carry-badge">⚡ End-Around Carry (+1)</span>' : ''}
+          ${s.isCorrupted ? '<span class="cs-carry-badge" style="background:rgba(239,68,68,0.2);color:#ef4444;border-color:#ef4444">💥 CORRUPT</span>' : ''}
+        </div>
+        <div class="cs-step-hex">+ ${hex16(s.word)} ➔ Accumulated Sum: ${hex16(s.runningSum)}</div>
+        <div style="font-size:0.78rem;color:var(--text-dim);margin-top:2px">${s.desc}</div>
+      `;
+
+      if (csViewMode === 'detailed') {
+        content += `
+          <div class="cs-arithmetic-box">
+            <div class="cs-arith-row"><span style="color:var(--text-dim)">Running Sum:</span><span>${bin16(s.prevSum)} (${hex16(s.prevSum)})</span></div>
+            <div class="cs-arith-row"><span style="color:var(--text-dim)">+ New Word:</span><span>${bin16(s.word)} (${hex16(s.word)})</span></div>
+            <div class="cs-arith-line"></div>
+            <div class="cs-arith-row"><span style="color:var(--text-dim)">= Raw Sum:</span><span style="color:${s.hasCarry ? '#f59e0b' : 'var(--text)'}">${s.hasCarry ? '[1] ' : '[0] '}${bin16(s.rawSum & 0xFFFF)} (0x${s.rawSum.toString(16).toUpperCase()})</span></div>
+            ${s.hasCarry ? `<div style="color:#f59e0b;font-size:0.75rem;margin-top:2px">↻ Carry bit 16 wraps to LSB: (0x${(s.rawSum & 0xFFFF).toString(16).toUpperCase()} + 1) = <b>${hex16(s.runningSum)}</b></div>` : '<div style="color:var(--text-muted);font-size:0.74rem">No carry overflow. Fits in 16 bits.</div>'}
+          </div>
+        `;
+      }
+
+      card.innerHTML = content;
+      card.addEventListener('click', () => highlightStep(idx));
+      body.appendChild(card);
+    });
+
+    // Subtotal card at end of section
+    const subtotalCard = document.createElement('div');
+    subtotalCard.className = 'cs-subtotal-card';
+    subtotalCard.innerHTML = `<span>${g.title.split('(')[0].trim()} Subtotal:</span><b>${hex16(lastSum)}</b>`;
+    body.appendChild(subtotalCard);
+
+    groupEl.appendChild(body);
+    list.appendChild(groupEl);
+  });
+
+  // Dedicated Inversion Step (Step N+1)
+  const lastStep = steps[steps.length - 1];
+  const finalSum = lastStep ? lastStep.runningSum : 0;
+  const invStepIdx = steps.length;
+
+  const invGroup = document.createElement('div');
+  invGroup.className = 'cs-section-group';
+
+  if (!isReceiver) {
+    const rawInv = (~finalSum) & 0xFFFF;
+    const finalCs = (rawInv === 0x0000) ? 0xFFFF : rawInv;
+    const invHeader = document.createElement('div');
+    invHeader.className = 'cs-section-header';
+    invHeader.innerHTML = `<span>🔄 Final Step ${invStepIdx + 1}: Invert All Bits (One's Complement)</span>`;
+    invGroup.appendChild(invHeader);
+
+    const invBody = document.createElement('div');
+    invBody.className = `cs-section-body cs-step-item ${invStepIdx === activeIdx ? 'active-step' : ''}`;
+    invBody.dataset.stepIdx = invStepIdx;
+    invBody.innerHTML = `
+      <div style="font-weight:700;color:var(--primary);font-size:0.88rem">One's Complement Bitwise Inversion: ~Sum ➔ Checksum</div>
+      <div style="font-size:0.8rem;color:var(--text-dim);margin:4px 0">Flip every bit of the accumulated sum (0 ➔ 1, 1 ➔ 0) to produce the transmitted checksum.</div>
+      <div style="font-family:monospace;font-size:0.84rem;margin:4px 0">~${hex16(finalSum)} = <b>${hex16(finalCs)}</b></div>
+      ${rawInv === 0x0000 ? '<div style="color:#f59e0b;font-size:0.75rem">*RFC 768 exception: Computed 0x0000 transmitted as 0xFFFF (0x0000 means no checksum).</div>' : ''}
+    `;
+    invBody.addEventListener('click', () => highlightStep(invStepIdx));
+    invGroup.appendChild(invBody);
+  } else {
+    const isAccepted = (finalSum === 0xFFFF);
+    const isCompBypass = isAccepted && csCompensating && (csCorruptedIdx !== null);
+    const verHeader = document.createElement('div');
+    verHeader.className = 'cs-section-header';
+    verHeader.innerHTML = `<span>🔍 Final Step ${invStepIdx + 1}: Receiver Verdict (Target: 0xFFFF)</span>`;
+    invGroup.appendChild(verHeader);
+
+    const verBody = document.createElement('div');
+    verBody.className = `cs-section-body cs-step-item ${isAccepted ? 'has-carry' : 'is-corrupt'} ${invStepIdx === activeIdx ? 'active-step' : ''}`;
+    verBody.dataset.stepIdx = invStepIdx;
+    verBody.innerHTML = `
+      <div style="font-weight:700;font-size:0.9rem;color:${isAccepted ? (isCompBypass ? '#f59e0b' : 'var(--success)') : 'var(--danger)'}">
+        ${isAccepted
+          ? (isCompBypass ? '⚠️ Verification BYPASSED — Compensating Error Undetected!' : '✅ Verification PASSED — Datagram Accepted!')
+          : '❌ Verification FAILED — Checksum Mismatch!'}
+      </div>
+      <div style="font-family:monospace;font-size:0.86rem;margin:4px 0">
+        Receiver Accumulated Sum: <b>${hex16(finalSum)}</b> ${isAccepted ? '(= 0xFFFF)' : '(≠ 0xFFFF)'}
+      </div>
+      <div style="font-size:0.8rem;color:var(--text-dim)">
+        ${isAccepted
+          ? (isCompBypass
+              ? 'Two compensating bit alterations canceled out in column arithmetic. The network stack accepts the corrupted datagram, proving the Internet Checksum\'s limitation compared to CRC.'
+              : 'All words + transmitted checksum sum to all ones (0xFFFF). The packet was received with bit-level integrity intact.')
+          : 'Bit corruption detected in transit. Operating system network stack will silently discard this datagram (no ICMP error or retransmit).'}
+      </div>
+    `;
+    verBody.addEventListener('click', () => highlightStep(invStepIdx));
+    invGroup.appendChild(verBody);
+  }
+
+  list.appendChild(invGroup);
 }
 
-function addBitRow(step, idx) {
-  const table = $('cs-bit-table');
-  table.innerHTML += `
-    <div class="cs-bit-row">
-      <span class="cs-bit-label">${idx + 1}. ${step.label.split(':')[0]}</span>
-      <span class="cs-bit-val">${bin16(step.word)}</span>
-      <span class="cs-bit-hex">${hex16(step.word)}</span>
-    </div>
-  `;
-}
-
-function drawChecksumCanvas(steps, activeIdx, finalChecksum) {
-  if (!csCtx) return;
+// ── Draw Checksum Canvas (Registers, Carry Wrap, Inversion Boxes) ──
+function drawChecksumCanvas(steps, activeIdx, isReceiver) {
+  if (!csCtx || !csCanvas) return;
   const ctx = csCtx;
-  const W   = csCanvas.width, H = csCanvas.height;
+  const W   = csCanvas.width;
+  const H   = csCanvas.height;
   ctx.clearRect(0, 0, W, H);
 
   const pad = 16;
-  const boxH = 26;
-  const gap = 4;
-  const maxVisible = Math.floor((H - 120) / (boxH + gap));
-  const startIdx   = Math.max(0, activeIdx - maxVisible + 3);
+  const isInversionStep = (activeIdx === steps.length);
+  const curStep = isInversionStep ? null : steps[activeIdx];
+  const lastStep = steps[steps.length - 1];
+  const finalSum = lastStep ? lastStep.runningSum : 0;
 
-  ctx.fillStyle = '#f0f6fc'; ctx.font = 'bold 14px "Segoe UI"';
-  ctx.textAlign = 'center'; ctx.fillText('16-Bit One\'s Complement Word Addition & Carry Wrap', W / 2, 20);
+  // Header Title
+  ctx.fillStyle = '#f1f5f9';
+  ctx.font = 'bold 13px "Inter", monospace';
+  ctx.textAlign = 'left';
+  const modeTitle = isReceiver ? '📥 Receiver 16-Bit Verification Trace' : '📤 Sender 16-Bit RFC 768 Checksum Trace';
+  ctx.fillText(modeTitle, pad, 22);
 
-  ctx.fillStyle = '#94a3b8'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
-  ctx.fillText('Step #', pad, 42);
-  ctx.fillText('Hex Word', pad + 55, 42);
-  ctx.fillText('Binary (16-bit register)', W / 2 - 50, 42);
   ctx.textAlign = 'right';
-  ctx.fillText('Accumulated Sum', W - pad, 42);
+  ctx.fillStyle = isReceiver ? '#38bdf8' : '#22c55e';
+  ctx.font = 'bold 12px monospace';
+  ctx.fillText(`Active Step: ${activeIdx + 1} of ${steps.length + 1}`, W - pad, 22);
 
-  const groupColors = { pseudo: '#6366f1', udp: '#2563eb', payload: '#be123c' };
+  // ── Top Box: Register Math & Carry Wrap ────────────────
+  const topBoxY = 32;
+  const topBoxH = 180;
+  ctx.fillStyle = '#0c1326';
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
+  ctx.lineWidth = 1;
+  rRect(ctx, pad, topBoxY, W - pad * 2, topBoxH, 8);
 
-  let y = 52;
-  for (let i = startIdx; i <= activeIdx && i < steps.length; i++) {
-    const s = steps[i];
-    const isActive = i === activeIdx;
-    const color = groupColors[s.group] || '#58a6ff';
-
-    ctx.fillStyle = isActive ? color + '44' : color + '18';
-    ctx.strokeStyle = isActive ? color : color + '55';
-    ctx.lineWidth = isActive ? 2 : 1;
-    rRect(ctx, pad, y, W - pad * 2, boxH, 4);
-
-    ctx.fillStyle = isActive ? '#fff' : '#a0aec0';
-    ctx.font = 'bold 11px monospace';
+  if (!isInversionStep && curStep) {
+    // Label
+    ctx.fillStyle = curStep.isCorrupted ? '#ef4444' : '#38bdf8';
+    ctx.font = 'bold 12px "Inter", monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(`${i + 1}.`, pad + 6, y + boxH / 2 + 4);
-    ctx.fillText(hex16(s.word), pad + 55, y + boxH / 2 + 4);
+    ctx.fillText(`${curStep.label} ${curStep.isCorrupted ? '💥 [CORRUPTED WORD]' : ''}`, pad + 14, topBoxY + 22);
 
-    ctx.fillStyle = isActive ? '#e3b341' : '#cbd5e1';
-    ctx.fillText(bin16(s.word), W / 2 - 60, y + boxH / 2 + 4);
+    // Register 1: Running Sum
+    const regY1 = topBoxY + 34;
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '11px monospace';
+    ctx.fillText('Running Sum:', pad + 14, regY1 + 14);
+    ctx.fillStyle = '#f1f5f9';
+    ctx.font = 'bold 13px monospace';
+    ctx.fillText(bin16(curStep.prevSum), pad + 110, regY1 + 14);
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText(hex16(curStep.prevSum), W - pad - 80, regY1 + 14);
+
+    // Register 2: + Word
+    const regY2 = topBoxY + 62;
+    ctx.fillStyle = curStep.isCorrupted ? '#ef4444' : '#f59e0b';
+    ctx.font = 'bold 13px monospace';
+    ctx.fillText('+ Next Word: ', pad + 14, regY2 + 14);
+    ctx.fillStyle = curStep.isCorrupted ? '#fca5a5' : '#f1f5f9';
+    ctx.fillText(bin16(curStep.word), pad + 110, regY2 + 14);
+    ctx.fillStyle = curStep.isCorrupted ? '#ef4444' : '#f59e0b';
+    ctx.fillText(hex16(curStep.word), W - pad - 80, regY2 + 14);
+
+    // Divider Line
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(pad + 14, topBoxY + 92);
+    ctx.lineTo(W - pad - 14, topBoxY + 92);
+    ctx.stroke();
+
+    // Register 3: Raw 17-Bit Sum & Carry
+    const regY3 = topBoxY + 98;
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '11px monospace';
+    ctx.fillText('Raw 17-Bit:  ', pad + 14, regY3 + 14);
+
+    // Bit 16 Carry Box
+    const carryCol = curStep.hasCarry ? '#f59e0b' : '#64748b';
+    ctx.fillStyle = curStep.hasCarry ? 'rgba(245, 158, 11, 0.25)' : 'rgba(100, 116, 139, 0.2)';
+    ctx.strokeStyle = carryCol;
+    ctx.lineWidth = 1.5;
+    rRect(ctx, pad + 104, regY3, 26, 20, 4);
+    ctx.fillStyle = carryCol;
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(curStep.hasCarry ? '1' : '0', pad + 117, regY3 + 14);
+
+    // Bits 15-0
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#f1f5f9';
+    ctx.font = 'bold 13px monospace';
+    ctx.fillText(bin16(curStep.rawSum & 0xFFFF), pad + 138, regY3 + 14);
+
+    // Raw Hex
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(`0x${curStep.rawSum.toString(16).toUpperCase()}`, W - pad - 80, regY3 + 14);
+
+    // Bottom Banner: Carry Wrap Message
+    const botY = topBoxY + 130;
+    if (curStep.hasCarry) {
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.12)';
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 1;
+      rRect(ctx, pad + 14, botY, W - pad * 2 - 28, 36, 6);
+
+      ctx.fillStyle = '#f59e0b';
+      ctx.font = 'bold 11px "Inter", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('⚡ End-Around Carry: Bit 16 overflow (+1) drops & wraps around to LSB', pad + 24, botY + 15);
+      ctx.fillStyle = '#22c55e';
+      ctx.font = 'bold 11px monospace';
+      ctx.fillText(`   (0x${(curStep.rawSum & 0xFFFF).toString(16).toUpperCase()} + 1) ➔ Accumulated Sum: ${hex16(curStep.runningSum)}`, pad + 24, botY + 29);
+    } else {
+      ctx.fillStyle = 'rgba(34, 197, 94, 0.08)';
+      ctx.strokeStyle = 'rgba(34, 197, 94, 0.3)';
+      ctx.lineWidth = 1;
+      rRect(ctx, pad + 14, botY, W - pad * 2 - 28, 36, 6);
+
+      ctx.fillStyle = '#22c55e';
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(`✓ No carry overflow (Fits in 16-bit register) ➔ Accumulated Sum: ${hex16(curStep.runningSum)}`, pad + 24, botY + 22);
+    }
+  } else if (isInversionStep) {
+    // ── Inversion Step Visualizer ──
+    if (!isReceiver) {
+      const rawInv = (~finalSum) & 0xFFFF;
+      const finalCs = (rawInv === 0x0000) ? 0xFFFF : rawInv;
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 13px "Inter", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('🔄 One\'s Complement Bit Inversion (~Sum = Checksum)', pad + 14, topBoxY + 22);
+
+      // Row 1: Final Sum Bits
+      ctx.fillStyle = '#94a3b8'; ctx.font = '11px monospace';
+      ctx.fillText('Accumulated Sum: ', pad + 14, topBoxY + 44);
+      const binSum = (finalSum & 0xFFFF).toString(2).padStart(16, '0');
+      const binCs  = (finalCs & 0xFFFF).toString(2).padStart(16, '0');
+
+      const cellW = Math.min(22, (W - pad * 2 - 160) / 16);
+      const startX = pad + 140;
+
+      for (let b = 0; b < 16; b++) {
+        const bx = startX + b * (cellW + 2);
+        ctx.fillStyle = '#111b36';
+        ctx.strokeStyle = '#38bdf8';
+        rRect(ctx, bx, topBoxY + 30, cellW, 20, 3);
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(binSum[b], bx + cellW / 2, topBoxY + 44);
+      }
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText(hex16(finalSum), startX + 16 * (cellW + 2) + 8, topBoxY + 44);
+
+      // Inversion Arrow
+      ctx.fillStyle = '#f59e0b'; ctx.font = 'bold 11px monospace';
+      ctx.fillText('  NOT (~) Bit Flip (0 ➔ 1,  1 ➔ 0)', pad + 140, topBoxY + 68);
+
+      // Row 2: Inverted Checksum Bits
+      ctx.fillStyle = '#94a3b8'; ctx.font = '11px monospace';
+      ctx.fillText('Final Checksum: ', pad + 14, topBoxY + 96);
+      for (let b = 0; b < 16; b++) {
+        const bx = startX + b * (cellW + 2);
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.25)';
+        ctx.strokeStyle = '#06b6d4';
+        rRect(ctx, bx, topBoxY + 82, cellW, 20, 3);
+        ctx.fillStyle = '#22c55e';
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(binCs[b], bx + cellW / 2, topBoxY + 96);
+      }
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#22c55e';
+      ctx.fillText(hex16(finalCs), startX + 16 * (cellW + 2) + 8, topBoxY + 96);
+
+      // Bottom Note
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.1)';
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1;
+      rRect(ctx, pad + 14, topBoxY + 116, W - pad * 2 - 28, 48, 6);
+      ctx.fillStyle = '#f1f5f9';
+      ctx.font = '11px "Inter", monospace';
+      ctx.fillText(`✓ Checksum Word ${hex16(finalCs)} ready to be inserted into UDP Header (bytes 26-27).`, pad + 24, topBoxY + 134);
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('Receiver will sum all header, pseudo-header, and payload words plus this checksum to land on 0xFFFF.', pad + 24, topBoxY + 150);
+    } else {
+      // Receiver Verification Verdict
+      const isAccepted = (finalSum === 0xFFFF);
+      const isCompBypass = isAccepted && csCompensating && (csCorruptedIdx !== null);
+      ctx.fillStyle = isAccepted ? (isCompBypass ? '#f59e0b' : '#22c55e') : '#ef4444';
+      ctx.font = 'bold 13px "Inter", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(`🔍 Receiver Verification Verdict: ${isAccepted ? (isCompBypass ? 'BYPASSED (0xFFFF)' : 'ACCEPT (0xFFFF)') : 'DROP (≠ 0xFFFF)'}`, pad + 14, topBoxY + 22);
+
+      const verBannerY = topBoxY + 38;
+      ctx.fillStyle = isAccepted ? (isCompBypass ? 'rgba(245, 158, 11, 0.12)' : 'rgba(34, 197, 94, 0.12)') : 'rgba(239, 68, 68, 0.12)';
+      ctx.strokeStyle = isAccepted ? (isCompBypass ? '#f59e0b' : '#22c55e') : '#ef4444';
+      ctx.lineWidth = 1.5;
+      rRect(ctx, pad + 14, verBannerY, W - pad * 2 - 28, 120, 8);
+
+      ctx.fillStyle = isAccepted ? (isCompBypass ? '#f59e0b' : '#22c55e') : '#ef4444';
+      ctx.font = 'bold 16px monospace';
+      ctx.textAlign = 'center';
+      const verdictText = isAccepted
+        ? (isCompBypass ? '⚠️ 0xFFFF — COMPENSATING ERROR BYPASSED!' : '✅ 0xFFFF — DATAGRAM ACCEPTED')
+        : '❌ CHECKSUM MISMATCH — SILENTLY DROPPED';
+      ctx.fillText(verdictText, W / 2, verBannerY + 38);
+
+      ctx.fillStyle = '#f1f5f9';
+      ctx.font = '12px monospace';
+      ctx.fillText(`Receiver Accumulated Sum = ${hex16(finalSum)} (${bin16(finalSum)})`, W / 2, verBannerY + 68);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px "Inter", sans-serif';
+      if (isAccepted) {
+        if (isCompBypass) {
+          ctx.fillText('Opposite column bit flips canceled each other out (+1 & -1 = 0), so the sum remained 0xFFFF.', W / 2, verBannerY + 92);
+        } else {
+          ctx.fillText('One\'s complement addition of all data words + transmitted checksum produced all 1s (0xFFFF).', W / 2, verBannerY + 92);
+        }
+      } else {
+        ctx.fillText('Bit corruption altered the sum. UDP has no retransmission; kernel drops the datagram silently.', W / 2, verBannerY + 92);
+      }
+    }
+  }
+
+  // ── Bottom Section: History Table of Steps ─────────────
+  const tableY = 222;
+  const tableH = H - tableY - 10;
+  ctx.fillStyle = '#090d13';
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.15)';
+  ctx.lineWidth = 1;
+  rRect(ctx, pad, tableY, W - pad * 2, tableH, 6);
+
+  // Table Column Headers
+  ctx.fillStyle = '#64748b';
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('STEP', pad + 10, tableY + 16);
+  ctx.fillText('WORD DESCRIPTION', pad + 55, tableY + 16);
+  ctx.fillText('HEX WORD', W / 2 - 40, tableY + 16);
+  ctx.fillText('CARRY', W / 2 + 50, tableY + 16);
+  ctx.textAlign = 'right';
+  ctx.fillText('ACCUMULATED SUM', W - pad - 12, tableY + 16);
+
+  // Visible rows
+  const rowH = 22;
+  const maxRows = Math.floor((tableH - 26) / rowH);
+  const startRow = Math.max(0, activeIdx - maxRows + 2);
+
+  const groupColors = { pseudo: '#6366f1', udp: '#38bdf8', payload: '#be123c' };
+
+  for (let i = startRow; i <= activeIdx && i < steps.length; i++) {
+    const s = steps[i];
+    const ry = tableY + 24 + (i - startRow) * rowH;
+    const isCur = (i === activeIdx);
+    const col = s.isCorrupted ? '#ef4444' : (groupColors[s.group] || '#38bdf8');
+
+    if (isCur) {
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+      ctx.fillRect(pad + 4, ry - 12, W - pad * 2 - 8, rowH - 2);
+    }
+
+    ctx.fillStyle = isCur ? '#f1f5f9' : '#94a3b8';
+    ctx.font = isCur ? 'bold 10px monospace' : '10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`${i + 1}.`, pad + 10, ry);
+
+    ctx.fillStyle = col;
+    const shortLabel = s.label.length > 28 ? s.label.slice(0, 26) + '…' : s.label;
+    ctx.fillText(shortLabel, pad + 55, ry);
+
+    ctx.fillStyle = s.isCorrupted ? '#ef4444' : '#f1f5f9';
+    ctx.fillText(hex16(s.word), W / 2 - 40, ry);
+
+    ctx.fillStyle = s.hasCarry ? '#f59e0b' : '#64748b';
+    ctx.fillText(s.hasCarry ? '⚡ Carry (+1)' : '—', W / 2 + 50, ry);
 
     ctx.textAlign = 'right';
-    ctx.fillStyle = isActive ? '#39d353' : '#38bdf8';
-    ctx.fillText(hex16(s.runningSum), W - pad - 6, y + boxH / 2 + 4);
-
-    y += boxH + gap;
-  }
-
-  // Result box at bottom
-  const bottomY = H - 50;
-  if (finalChecksum !== undefined) {
-    const col = csCorrupt ? '#f85149' : '#39d353';
-    ctx.fillStyle = col + '22'; ctx.strokeStyle = col; ctx.lineWidth = 2;
-    rRect(ctx, W / 2 - 130, bottomY, 260, 34, 8);
-    ctx.fillStyle = col; ctx.font = 'bold 14px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(`Final Checksum = ${hex16(finalChecksum)} ${csCorrupt ? '❌' : '✓'}`, W / 2, bottomY + 22);
+    ctx.fillStyle = isCur ? '#22c55e' : '#38bdf8';
+    ctx.fillText(hex16(s.runningSum), W - pad - 12, ry);
   }
 }
 
-async function runCorruptVerify() {
-  await runChecksumCompute();
-  csCorrupt = true;
+// ── Step Navigation & Highlighting ───────────────────────
+function highlightStep(idx) {
+  if (!csSteps || csSteps.length === 0) return;
+  const total = csSteps.length;
+  csActiveStep = Math.max(0, Math.min(total, idx));
 
-  const srcIP   = $('cs-src-ip').value   || '192.168.1.10';
-  const dstIP   = $('cs-dst-ip').value   || '192.168.1.20';
-  const srcPort = parseInt($('cs-src-port').value) || 5000;
-  const dstPort = parseInt($('cs-dst-port').value) || 8080;
-  const payload = $('cs-payload').value || 'Hello UDP-Scope!';
+  // Update pills
+  document.querySelectorAll('.cs-step-pill').forEach((p, i) => {
+    p.classList.toggle('active', i === csActiveStep);
+    if (i < csActiveStep) p.classList.add('done');
+    else if (i > csActiveStep) p.classList.remove('done');
+  });
 
-  const { checksum } = computeChecksumSteps(srcIP, dstIP, srcPort, dstPort, payload);
+  // Update step cards in list
+  document.querySelectorAll('.cs-step-item').forEach(card => {
+    const sIdx = parseInt(card.dataset.stepIdx);
+    card.classList.toggle('active-step', sIdx === csActiveStep);
+    if (sIdx === csActiveStep) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  });
 
-  // Corrupt one byte
-  const corruptIdx = randInt(0, payload.length - 1);
-  const corruptedPayload = [...payload].map((c, i) =>
-    i === corruptIdx ? String.fromCharCode(c.charCodeAt(0) ^ randInt(1, 255)) : c
-  ).join('');
+  // Update Context Sidebar Explainer Card
+  const explainer = $('cs-step-explainer');
+  if (explainer) {
+    if (csActiveStep < total) {
+      const s = csSteps[csActiveStep];
+      explainer.innerHTML = `
+        <div style="font-weight:700;color:var(--primary);margin-bottom:2px">Step ${csActiveStep + 1}: ${s.label}</div>
+        <div>${s.desc}</div>
+        <div style="margin-top:4px;font-size:0.8rem;color:${s.hasCarry ? '#f59e0b' : 'var(--text-dim)'}">
+          ${s.hasCarry ? '⚡ <b>End-Around Carry active:</b> Bit 16 overflow added back to LSB.' : '✓ No carry overflow on this addition.'}
+        </div>
+      `;
+    } else {
+      explainer.innerHTML = csTraceMode === 'sender'
+        ? `<b>Inversion Step:</b> Inverting all 16 bits of the accumulated sum (~Sum) to yield the transmitted checksum (RFC 768).`
+        : (csCorruptedIdx === null
+            ? `<b>Verification Verdict (Intact):</b> All words + transmitted checksum sum to 0xFFFF. Datagram accepted with bit-level integrity intact!`
+            : `<b>Verification Verdict (Corrupted):</b> Injected bit error altered the sum (≠ 0xFFFF). The kernel stack silently drops this packet.`);
+    }
+  }
 
-  const { sum: vSum } = computeChecksumSteps(srcIP, dstIP, srcPort, dstPort, corruptedPayload);
-  let receiverCheck = (vSum + checksum) & 0xFFFF;
-  while (receiverCheck > 0xFFFF) receiverCheck = (receiverCheck & 0xFFFF) + (receiverCheck >> 16);
+  // Update Walkthrough indicator
+  const info = $('cs-walk-info');
+  if (info) info.textContent = `Step ${csActiveStep + 1} of ${total + 1}`;
 
-  const isAllOnes = receiverCheck === 0xFFFF;
+  // Redraw Canvas
+  drawChecksumCanvas(csSteps, csActiveStep, csTraceMode === 'receiver');
+}
 
+// ── Run Sender Checksum Computation Trace ────────────────
+async function runChecksumCompute() {
+  const currentToken = ++csRunToken;
+  csTraceMode = 'sender';
+  csIsPlaying = true;
+  updateTraceModeButtons();
+
+  const srcIP   = $('cs-src-ip') ? ($('cs-src-ip').value || '192.168.1.10') : '192.168.1.10';
+  const dstIP   = $('cs-dst-ip') ? ($('cs-dst-ip').value || '192.168.1.20') : '192.168.1.20';
+  const srcPort = $('cs-src-port') ? (parseInt($('cs-src-port').value) || 5000) : 5000;
+  const dstPort = $('cs-dst-port') ? (parseInt($('cs-dst-port').value) || 8080) : 8080;
+  const payload = $('cs-payload') ? ($('cs-payload').value || 'Hello UDP-Scope!') : 'Hello UDP-Scope!';
+
+  const result = computeChecksumSteps(srcIP, dstIP, srcPort, dstPort, payload);
+  csSteps = result.steps;
+  csLastSenderChecksum = result.checksum;
+  csLastResultObj = result;
+
+  $('cs-result-title').textContent = 'Calculated Checksum Word (Sender)';
+  $('cs-result-val').textContent   = 'Computing…';
+  $('cs-result-val').className     = 'cs-result-value';
+  $('cs-result-status').textContent = '';
+  $('cs-result-status').className  = 'cs-result-status';
+  $('cs-result-box').className     = 'cs-result-box';
+  $('cs-verify-section').style.display = 'none';
+
+  // Render Pills
+  const pills = $('cs-step-pills');
+  if (pills) {
+    pills.innerHTML = '';
+    for (let i = 0; i <= csSteps.length; i++) {
+      const pill = document.createElement('span');
+      pill.className = 'cs-step-pill';
+      pill.textContent = (i === csSteps.length) ? 'INV' : (i + 1);
+      pill.title = (i === csSteps.length) ? 'Inversion Step' : `Step ${i + 1}: ${csSteps[i].label}`;
+      pill.addEventListener('click', () => {
+        csIsPlaying = false;
+        updatePlayBtn();
+        highlightStep(i);
+      });
+      pills.appendChild(pill);
+    }
+  }
+
+  resizeCsCanvas();
+  renderCsGroupedSteps(csSteps, 0, false);
+  renderCsByteChips();
+
+  const totalSteps = csSteps.length; // +1 for inversion
+  for (let i = 0; i <= totalSteps; i++) {
+    if (csRunToken !== currentToken) return; // cancelled
+    while (csIsPlaying === false && csRunToken === currentToken) {
+      await sleep(100);
+    }
+    if (csRunToken !== currentToken) return;
+
+    highlightStep(i);
+    const delay = Math.max(80, 500 / csSpeed);
+    await sleep(delay);
+  }
+
+  // Final Result Display
+  if (csRunToken !== currentToken) return;
+  $('cs-result-val').textContent = result.checksumHex;
+  $('cs-result-val').className   = 'cs-result-value pass';
+  $('cs-result-status').textContent = `✅ RFC 768 Checksum = ${result.checksumHex} (Ready for Header)`;
+  $('cs-result-status').className   = 'cs-result-status pass';
+  $('cs-result-box').className      = 'cs-result-box pass';
+  $('cs-anim-label').textContent    = `Sender Checksum = ${result.checksumHex} ✅`;
+
+  document.querySelectorAll('.cs-step-pill').forEach(p => p.classList.add('done'));
+  csIsPlaying = false;
+  updatePlayBtn();
+}
+
+// ── Run Receiver Verification Trace ─────────────────────
+async function runCorruptVerify(opts = {}) {
+  const currentToken = ++csRunToken;
+  csTraceMode = 'receiver';
+  csIsPlaying = true;
+  updateTraceModeButtons();
+
+  const srcIP   = $('cs-src-ip') ? ($('cs-src-ip').value || '192.168.1.10') : '192.168.1.10';
+  const dstIP   = $('cs-dst-ip') ? ($('cs-dst-ip').value || '192.168.1.20') : '192.168.1.20';
+  const srcPort = $('cs-src-port') ? (parseInt($('cs-src-port').value) || 5000) : 5000;
+  const dstPort = $('cs-dst-port') ? (parseInt($('cs-dst-port').value) || 8080) : 8080;
+  const payload = $('cs-payload') ? ($('cs-payload').value || 'Hello UDP-Scope!') : 'Hello UDP-Scope!';
+
+  // Genuine sender calculation
+  const senderRes = computeChecksumSteps(srcIP, dstIP, srcPort, dstPort, payload);
+  csLastSenderChecksum = senderRes.checksum;
+
+  // Only auto-pick a random corruption if forceCorrupt is explicitly requested AND no byte was chosen
+  if (opts && opts.forceCorrupt && csCorruptedIdx === null) {
+    const bytes = Array.from(new TextEncoder().encode(payload));
+    csCorruptedIdx = bytes.length > 0 ? randInt(0, bytes.length - 1) : 0;
+  }
+  renderCsByteChips();
+
+  // Receiver calculation with real checksum in place
+  const recvRes = computeChecksumSteps(srcIP, dstIP, srcPort, dstPort, payload, {
+    includeChecksumWord: csLastSenderChecksum,
+    corruptedByteIdx: csCorruptedIdx,
+    corruptXor: 0xFF,
+    compensating: csCompensating
+  });
+
+  csSteps = recvRes.steps;
+  const receiverSum = recvRes.sum;
+  const isValid = (receiverSum === 0xFFFF);
+  const hasCorruption = (csCorruptedIdx !== null && recvRes.bytes.length > 0);
+  const isCompBypass = isValid && csCompensating && hasCorruption;
+
+  $('cs-result-title').textContent = 'Sender Transmitted Checksum Word';
+  $('cs-result-val').textContent   = senderRes.checksumHex;
+  $('cs-result-val').className     = 'cs-result-value pass'; // sender checksum is ALWAYS valid and green!
+  $('cs-result-status').textContent = `Transmitted by sender: ${senderRes.checksumHex} ✅`;
+  $('cs-result-status').className   = 'cs-result-status pass';
+  $('cs-result-box').className      = 'cs-result-box pass';
+
+  // Render Pills
+  const pills = $('cs-step-pills');
+  if (pills) {
+    pills.innerHTML = '';
+    for (let i = 0; i <= csSteps.length; i++) {
+      const pill = document.createElement('span');
+      pill.className = 'cs-step-pill';
+      pill.textContent = (i === csSteps.length) ? 'VER' : (i + 1);
+      pill.title = (i === csSteps.length) ? 'Verification Step' : `Step ${i + 1}: ${csSteps[i].label}`;
+      pill.addEventListener('click', () => {
+        csIsPlaying = false;
+        updatePlayBtn();
+        highlightStep(i);
+      });
+      pills.appendChild(pill);
+    }
+  }
+
+  resizeCsCanvas();
+  renderCsGroupedSteps(csSteps, 0, true);
+
+  // Verification bottom section
   $('cs-verify-section').style.display = 'block';
+  let corruptDesc = 'None (Valid intact datagram)';
+  if (hasCorruption) {
+    corruptDesc = csCompensating
+      ? `Compensating column alteration on Byte #${csCorruptedIdx} (+1) and companion (-1)`
+      : `Byte #${csCorruptedIdx} inverted (0x${recvRes.bytes[csCorruptedIdx].toString(16).padStart(2,'0')})`;
+  }
+
   $('cs-verify-body').innerHTML = `
-    <p>Original payload: <code>"${payload}"</code></p>
-    <p>💥 Corrupted byte at position #${corruptIdx}: <code>"${corruptedPayload}"</code></p>
-    <p>Sender's Checksum Word: <code>${hex16(checksum)}</code></p>
-    <p>Receiver Computed Sum: <code>${hex16(vSum)}</code></p>
-    <p>Receiver Verification: <code>${hex16(vSum)} + ${hex16(checksum)} = ${hex16(vSum + checksum)}</code></p>
-    <p>${isAllOnes ? '<span style="color:#3fb950;font-weight:700">Result = 0xFFFF ➔ Valid!</span>' : '<span style="color:#f85149;font-weight:700">Result ≠ 0xFFFF ➔ FAILED: Corrupted packet silently dropped by receiver!</span>'}</p>
+    <p>Sender Transmitted Checksum: <code>${senderRes.checksumHex}</code> (valid)</p>
+    <p>Injected Corruption: <code>${corruptDesc}</code></p>
+    <p>Receiver Accumulated Sum: <code>${hex16(receiverSum)}</code></p>
+    <p>Verification Check: <code>Sum === 0xFFFF</code></p>
+    <p>${isValid
+      ? (isCompBypass
+          ? '<span style="color:#f59e0b;font-weight:700">⚠️ Result = 0xFFFF ➔ BYPASSED! Compensating error undetected!</span>'
+          : '<span style="color:#22c55e;font-weight:700">✓ Result = 0xFFFF ➔ Datagram Accepted!</span>')
+      : '<span style="color:#ef4444;font-weight:700">❌ Result ≠ 0xFFFF ➔ CHECKSUM MISMATCH: Datagram silently dropped!</span>'}
+    </p>
+    ${!hasCorruption ? '<div style="font-size:0.78rem;color:#22c55e;margin-top:4px">✓ No corruption injected: Receiver summed all words + transmitted checksum and verified 0xFFFF successfully!</div>' : ''}
+    ${isCompBypass ? '<div style="font-size:0.78rem;color:#f59e0b;margin-top:4px">⚠️ Two compensating column alterations canceled out mathematically in 16-bit addition, proving the limitation of Internet Checksums compared to CRC.</div>' : ''}
   `;
 
-  $('cs-result-val').textContent = hex16(checksum);
-  $('cs-result-val').className   = 'cs-result-value fail';
-  $('cs-result-status').textContent = '❌ Corruption detected — Datagram DROPPED by receiver!';
-  $('cs-result-status').className   = 'cs-result-status fail';
-  $('cs-result-box').className      = 'cs-result-box fail';
+  drawVerifyCanvas(!isValid, isCompBypass);
 
-  drawVerifyCanvas(!isAllOnes);
+  const totalSteps = csSteps.length;
+  for (let i = 0; i <= totalSteps; i++) {
+    if (csRunToken !== currentToken) return;
+    while (csIsPlaying === false && csRunToken === currentToken) {
+      await sleep(100);
+    }
+    if (csRunToken !== currentToken) return;
+
+    highlightStep(i);
+    const delay = Math.max(80, 500 / csSpeed);
+    await sleep(delay);
+  }
+
+  if (csRunToken !== currentToken) return;
+  csIsPlaying = false;
+  updatePlayBtn();
+  const animVerdict = isValid
+    ? (isCompBypass
+        ? 'Receiver Verdict: Compensating Error Bypassed ⚠️'
+        : (hasCorruption ? 'Receiver Verdict: Accepted (0xFFFF) ✅' : 'Receiver Verdict: Intact Datagram Accepted (0xFFFF) ✅'))
+    : 'Receiver Verdict: Checksum Mismatch (Dropped) ❌';
+  $('cs-anim-label').textContent = animVerdict;
 }
 
-function drawVerifyCanvas(detected) {
-  if (!csVCtx) return;
+function drawVerifyCanvas(detected, bypassed = false) {
+  if (!csVCtx || !csVCanvas) return;
   const ctx = csVCtx;
-  const W = csVCanvas.width = csVCanvas.parentElement.clientWidth - 20;
-  const H = csVCanvas.height = 130;
+  const W = csVCanvas.width = csVCanvas.parentElement ? csVCanvas.parentElement.clientWidth - 20 : 300;
+  const H = csVCanvas.height = 110;
   ctx.clearRect(0, 0, W, H);
 
-  const sx = 50, rx = W - 50, my = H / 2;
-  drawNetNode(ctx, sx, my, '💻', '#58a6ff');
-  drawNetNode(ctx, rx, my, detected ? '🚫' : '🖥️', detected ? '#f85149' : '#3fb950');
+  const sx = 40, rx = W - 40, my = H / 2;
+  const rxColor = detected ? '#ef4444' : (bypassed ? '#f59e0b' : '#22c55e');
+  const rxIcon  = detected ? '🚫' : (bypassed ? '⚠️' : '🖥️');
+  const rxState = detected ? 'DROPPED' : (bypassed ? 'BYPASSED' : 'ACCEPTED');
 
-  ctx.strokeStyle = '#f85149'; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
-  ctx.beginPath(); ctx.moveTo(sx + 30, my); ctx.lineTo(rx - 30, my); ctx.stroke();
+  drawNetNode(ctx, sx, my, '💻', '#38bdf8', 'SENDER', 'Port 5000');
+  drawNetNode(ctx, rx, my, rxIcon, rxColor, 'RECEIVER', rxState);
+
+  ctx.strokeStyle = rxColor;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.moveTo(sx + 24, my);
+  ctx.lineTo(rx - 24, my);
+  ctx.stroke();
   ctx.setLineDash([]);
 
-  ctx.fillStyle = '#f85149'; ctx.font = 'bold 13px "Segoe UI"'; ctx.textAlign = 'center';
-  ctx.fillText('💥 Injected Bit Error Detected (Checksum Mismatch)', W / 2, my - 20);
-  ctx.fillText(detected ? 'Datagram Dropped by Receiver' : 'Accepted', W / 2, my + 30);
+  ctx.fillStyle = rxColor;
+  ctx.font = 'bold 12px "Inter", monospace';
+  ctx.textAlign = 'center';
+  const label = detected
+    ? '💥 Injected Bit Error Detected (Checksum Mismatch)'
+    : (bypassed ? '⚠️ Compensating Error Slipped Through (Undetected!)' : '✓ One\'s Complement Verified (0xFFFF)');
+  ctx.fillText(label, W / 2, my - 16);
+  ctx.font = '11px monospace';
+  const sub = detected
+    ? 'Datagram Silently Dropped by Kernel'
+    : (bypassed ? 'Column Flips Canceled Out — Accepted As Valid' : 'Datagram Passed to Application Socket');
+  ctx.fillText(sub, W / 2, my + 26);
 }
 
 function resetChecksum() {
-  csSteps = []; csActiveStep = -1; csCorrupt = false;
-  $('cs-steps-list').innerHTML = '<div class="cs-step-placeholder">Click "Step-by-Step Compute" to trace addition.</div>';
-  $('cs-bit-table').innerHTML  = '<div class="cs-step-placeholder">Binary 16-bit registers will appear here.</div>';
-  $('cs-step-pills').innerHTML = '';
-  $('cs-result-val').textContent = '—';
-  $('cs-result-val').className   = 'cs-result-value';
-  $('cs-result-status').textContent = '';
-  $('cs-result-status').className   = 'cs-result-status';
-  $('cs-result-box').className      = 'cs-result-box';
-  $('cs-verify-section').style.display = 'none';
+  csRunToken++;
+  csIsPlaying = false;
+  csSteps = [];
+  csActiveStep = -1;
+  csCorruptedIdx = null;
+  updatePlayBtn();
+
+  if ($('cs-steps-list')) $('cs-steps-list').innerHTML = '<div class="cs-step-placeholder">Click "Compute Checksum" to begin tracing.</div>';
+  if ($('cs-step-pills')) $('cs-step-pills').innerHTML = '';
+  if ($('cs-step-explainer')) $('cs-step-explainer').textContent = 'Click "Compute Checksum" to begin tracing one\'s-complement addition.';
+  if ($('cs-result-title')) $('cs-result-title').textContent = 'Calculated Checksum Word';
+  if ($('cs-result-val')) { $('cs-result-val').textContent = '—'; $('cs-result-val').className = 'cs-result-value'; }
+  if ($('cs-result-status')) { $('cs-result-status').textContent = ''; $('cs-result-status').className = 'cs-result-status'; }
+  if ($('cs-result-box')) $('cs-result-box').className = 'cs-result-box';
+  if ($('cs-verify-section')) $('cs-verify-section').style.display = 'none';
+  if ($('cs-anim-label')) $('cs-anim-label').textContent = '16-Bit Word Addition Trace';
+  if ($('cs-walk-info')) $('cs-walk-info').textContent = 'Step 0 of 0';
+
+  renderCsByteChips();
   if (csCtx) { resizeCsCanvas(); csCtx.clearRect(0, 0, csCanvas.width, csCanvas.height); }
+}
+
+function updateTraceModeButtons() {
+  if ($('cs-mode-sender')) $('cs-mode-sender').classList.toggle('active', csTraceMode === 'sender');
+  if ($('cs-mode-receiver')) $('cs-mode-receiver').classList.toggle('active', csTraceMode === 'receiver');
+}
+
+function updatePlayBtn() {
+  const btn = $('cs-walk-play');
+  if (btn) btn.textContent = csIsPlaying ? '⏸ Pause' : '▶ Play';
 }
 
 // ══════════════════════════════════════════════════════
@@ -2836,7 +3701,12 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
       }, 60);
     }
     if (id === 'checksum') {
-      setTimeout(() => resizeCsCanvas(), 60);
+      setTimeout(() => {
+        resizeCsCanvas();
+        renderCsByteChips();
+        updateCsMiniDemo();
+        if (csSteps.length > 0) highlightStep(csActiveStep >= 0 ? csActiveStep : 0);
+      }, 60);
     }
     if (id === 'quiz') {
       if (answeredQuestions.size === 0) initQuiz();
@@ -3051,13 +3921,138 @@ if ($('pb-log-clear')) {
 
 // Checksum tab
 if ($('cs-btn-compute')) $('cs-btn-compute').addEventListener('click', runChecksumCompute);
-if ($('cs-btn-corrupt')) $('cs-btn-corrupt').addEventListener('click', runCorruptVerify);
+if ($('cs-btn-verify')) {
+  $('cs-btn-verify').addEventListener('click', () => {
+    csCorruptedIdx = null;
+    renderCsByteChips();
+    runCorruptVerify({ forceCorrupt: false });
+  });
+}
+if ($('cs-btn-corrupt')) {
+  $('cs-btn-corrupt').addEventListener('click', () => {
+    runCorruptVerify({ forceCorrupt: true });
+  });
+}
 if ($('cs-btn-reset'))   $('cs-btn-reset').addEventListener('click', resetChecksum);
 if ($('cs-speed')) {
   $('cs-speed').addEventListener('input', e => {
     csSpeed = parseFloat(e.target.value);
     if ($('cs-speed-val')) $('cs-speed-val').textContent = `${csSpeed}x`;
   });
+}
+
+// Sender / Receiver Mode buttons
+if ($('cs-mode-sender')) {
+  $('cs-mode-sender').addEventListener('click', () => {
+    runChecksumCompute();
+  });
+}
+if ($('cs-mode-receiver')) {
+  $('cs-mode-receiver').addEventListener('click', () => {
+    runCorruptVerify({ forceCorrupt: false });
+  });
+}
+
+// Simple / Detailed view toggle
+if ($('cs-view-simple')) {
+  $('cs-view-simple').addEventListener('click', () => {
+    csViewMode = 'simple';
+    $('cs-view-simple').classList.add('active');
+    if ($('cs-view-detailed')) $('cs-view-detailed').classList.remove('active');
+    if (csSteps.length > 0) {
+      renderCsGroupedSteps(csSteps, csActiveStep, csTraceMode === 'receiver');
+      highlightStep(csActiveStep);
+    }
+  });
+}
+if ($('cs-view-detailed')) {
+  $('cs-view-detailed').addEventListener('click', () => {
+    csViewMode = 'detailed';
+    $('cs-view-detailed').classList.add('active');
+    if ($('cs-view-simple')) $('cs-view-simple').classList.remove('active');
+    if (csSteps.length > 0) {
+      renderCsGroupedSteps(csSteps, csActiveStep, csTraceMode === 'receiver');
+      highlightStep(csActiveStep);
+    }
+  });
+}
+
+// "Walk Me Through It" Step Controls
+if ($('cs-walk-first')) {
+  $('cs-walk-first').addEventListener('click', () => {
+    csIsPlaying = false;
+    updatePlayBtn();
+    if (csSteps.length > 0) highlightStep(0);
+  });
+}
+if ($('cs-walk-prev')) {
+  $('cs-walk-prev').addEventListener('click', () => {
+    csIsPlaying = false;
+    updatePlayBtn();
+    if (csSteps.length > 0 && csActiveStep > 0) highlightStep(csActiveStep - 1);
+  });
+}
+if ($('cs-walk-play')) {
+  $('cs-walk-play').addEventListener('click', () => {
+    if (!csSteps || csSteps.length === 0) {
+      if (csTraceMode === 'sender') runChecksumCompute();
+      else runCorruptVerify();
+    } else {
+      csIsPlaying = !csIsPlaying;
+      updatePlayBtn();
+    }
+  });
+}
+if ($('cs-walk-next')) {
+  $('cs-walk-next').addEventListener('click', () => {
+    csIsPlaying = false;
+    updatePlayBtn();
+    if (csSteps.length > 0 && csActiveStep < csSteps.length) highlightStep(csActiveStep + 1);
+  });
+}
+if ($('cs-walk-last')) {
+  $('cs-walk-last').addEventListener('click', () => {
+    csIsPlaying = false;
+    updatePlayBtn();
+    if (csSteps.length > 0) highlightStep(csSteps.length);
+  });
+}
+
+// Payload input & corruption controls
+if ($('cs-payload')) {
+  $('cs-payload').addEventListener('input', () => {
+    renderCsByteChips();
+  });
+}
+if ($('cs-btn-corrupt-rand')) {
+  $('cs-btn-corrupt-rand').addEventListener('click', () => {
+    const payload = $('cs-payload') ? ($('cs-payload').value || '') : '';
+    const bytes = Array.from(new TextEncoder().encode(payload));
+    if (bytes.length > 0) {
+      csCorruptedIdx = randInt(0, bytes.length - 1);
+      renderCsByteChips();
+      if (csTraceMode === 'receiver') runCorruptVerify({ forceCorrupt: false });
+    }
+  });
+}
+if ($('cs-btn-corrupt-clear')) {
+  $('cs-btn-corrupt-clear').addEventListener('click', () => {
+    csCorruptedIdx = null;
+    renderCsByteChips();
+    if (csTraceMode === 'receiver') runCorruptVerify({ forceCorrupt: false });
+  });
+}
+if ($('cs-compensating-chk')) {
+  $('cs-compensating-chk').addEventListener('change', e => {
+    csCompensating = e.target.checked;
+    renderCsByteChips();
+    if (csTraceMode === 'receiver') runCorruptVerify({ forceCorrupt: false });
+  });
+}
+
+// Why It Works Mini-Demo input
+if ($('cs-mini-x')) {
+  $('cs-mini-x').addEventListener('input', updateCsMiniDemo);
 }
 
 // Quiz tab
@@ -3081,6 +4076,8 @@ function initApp() {
   startPaNetworkAnimation();
   pbLogEvent('info', 'Enterprise UDP-Scope Suite loaded and initialized successfully.');
   initComparisonCanvases();
+  renderCsByteChips();
+  updateCsMiniDemo();
 }
 
 if (document.readyState === 'loading') {
