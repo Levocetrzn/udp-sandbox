@@ -2624,7 +2624,7 @@ function pbSwitchMiniTab(tabName) {
 
 function pbSwitchInspectorTab(tabKey) {
   document.querySelectorAll('.pa-insp-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tabKey));
-  ['diagram', 'hex', 'binary'].forEach(k => {
+  ['hex', 'binary'].forEach(k => {
     const el = $(`pa-tab-${k}`);
     if (el) el.classList.toggle('active', k === tabKey);
   });

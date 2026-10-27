@@ -2001,9 +2001,9 @@ p  { font-size: 0.92rem; color: var(--text-dim); }
   line-height: 1;
 }
 
-/* Column 3: SECTION F - Packet Inspector with 3 Tabs */
+/* Column 3: SECTION F - Packet Inspector with Hex & Binary Views */
 .pa-inspector-card {
-  min-height: 330px;
+  min-height: 460px;
 }
 .pa-inspector-nav {
   display: flex;
@@ -2034,7 +2034,7 @@ p  { font-size: 0.92rem; color: var(--text-dim); }
 .pa-insp-content {
   display: none;
   padding: 12px;
-  max-height: 310px;
+  max-height: 440px;
   overflow-y: auto;
 }
 .pa-insp-content.active {

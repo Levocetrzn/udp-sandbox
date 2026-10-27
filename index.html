@@ -727,29 +727,16 @@
           </div>
         </div>
 
-        <!-- Column 3: SECTION F - Packet Inspector with 3 Tabs & Field Explainer Panel -->
+        <!-- Column 3: SECTION F - Packet Inspector with Hex & Binary Views -->
         <div class="pa-col pa-inspector-col">
           <div class="pa-card pa-inspector-card">
             <div class="pa-inspector-nav">
-              <button class="pa-insp-tab active" data-tab="diagram">📐 Packet Diagram</button>
-              <button class="pa-insp-tab" data-tab="hex">01 Hexadecimal View</button>
+              <button class="pa-insp-tab active" data-tab="hex">01 Hexadecimal View</button>
               <button class="pa-insp-tab" data-tab="binary">10 Binary View</button>
             </div>
 
-            <!-- Tab 1: Packet Diagram & Wireshark Dissector Tree -->
-            <div class="pa-insp-content active" id="pa-tab-diagram">
-              <div class="wireshark-inspector" id="wireshark-tree">
-                <div class="ws-notice">🦈 Wireshark-Style Protocol Dissector: Expand layers below to inspect protocol hierarchy.</div>
-                <div class="ws-tree-container" id="ws-tree-root">
-                  <div class="placeholder-text">Build a packet to inspect protocol layers.</div>
-                </div>
-              </div>
-              <div class="pb-datagram" id="pb-datagram" style="display:none;"></div>
-              <div id="decoded-fields" class="decoded-fields pb-fields-list" style="display:none;"></div>
-            </div>
-
-            <!-- Tab 2: Hexadecimal View with byte highlighting -->
-            <div class="pa-insp-content" id="pa-tab-hex">
+            <!-- Tab 1: Hexadecimal View with byte highlighting -->
+            <div class="pa-insp-content active" id="pa-tab-hex">
               <div class="pa-hex-container">
                 <div class="pa-hex-header">
                   <span class="pa-hex-col-hdr">Offset</span>
@@ -764,7 +751,7 @@
               </div>
             </div>
 
-            <!-- Tab 3: Binary View with bit inspection -->
+            <!-- Tab 2: Binary View with bit inspection -->
             <div class="pa-insp-content" id="pa-tab-binary">
               <div class="pa-bin-container">
                 <div class="pa-bin-legend">
@@ -778,32 +765,6 @@
               </div>
             </div>
           </div>
-
-          <!-- Dynamic Field Detail Explainer Panel -->
-          <div class="pa-card pa-field-panel" id="field-detail-panel">
-            <div class="pa-field-panel-header">
-              <div class="pa-field-header-info">
-                <span class="pa-field-layer-badge" id="fd-layer-badge">UDP Header</span>
-                <span class="pa-field-name-title" id="fd-name">Destination Port</span>
-              </div>
-              <span class="pa-field-width-badge" id="fd-width">16 Bits (2 Bytes)</span>
-            </div>
-            <div class="pa-field-panel-body">
-              <div class="pa-field-prop">
-                <span class="pa-field-prop-label">Current Value:</span>
-                <span class="pa-field-prop-val" id="fd-val">8080 (0x1F90)</span>
-              </div>
-              <div class="pa-field-prop">
-                <span class="pa-field-prop-label">Engineering Purpose:</span>
-                <p class="pa-field-desc" id="fd-desc">Identifies the destination application socket or service process on the target host receiving this datagram.</p>
-              </div>
-              <div class="pa-field-prop">
-                <span class="pa-field-prop-label">Standard Specification & Example:</span>
-                <p class="pa-field-example" id="fd-example">RFC 768. Standard well-known ports include 53 (DNS), 67 (DHCP), 123 (NTP). Ports 1024-49151 are registered services.</p>
-              </div>
-            </div>
-          </div>
-
         </div>
 
       </div>
