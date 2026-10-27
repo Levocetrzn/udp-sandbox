@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>UDP-Scope — Network Protocol Engineering & Telemetry Platform</title>
+  <link rel="stylesheet" href="src/style.css" />
+</head>
+<body>
+
+  <!-- ─── Platform Header & Global NOC Metrics ──────────────── -->
+  <header class="app-header">
+    <div class="header-main">
+      <div class="nav-brand">
+        <div class="brand-orb">
+          <span class="brand-icon">🔭</span>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">UDP-Scope</span>
+          <span class="brand-subtitle">Network Protocol Engineering & Telemetry Platform</span>
+        </div>
+      </div>
+
+      <!-- Quick Metrics Bar (Inspired by NOC Dashboard) -->
+      <div class="header-kpis">
+        <div class="kpi-chip">
+          <div class="kpi-ring ring-green">
+            <svg viewBox="0 0 36 36"><path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/><path class="ring-fill fill-green" stroke-dasharray="99.98, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/></svg>
+            <span class="ring-icon">⚡</span>
+          </div>
+          <div class="kpi-text">
+            <span class="kpi-label">Availability</span>
+            <span class="kpi-val" id="top-kpi-avail">99.98%</span>
+            <span class="kpi-sub green">Online</span>
+          </div>
+        </div>
+
+        <div class="kpi-chip">
+          <div class="kpi-ring ring-purple">
+            <svg viewBox="0 0 36 36"><path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/><path class="ring-fill fill-purple" stroke-dasharray="88, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/></svg>
+            <span class="ring-icon">📈</span>
+          </div>
+          <div class="kpi-text">
+            <span class="kpi-label">Latency (Ping)</span>
+            <span class="kpi-val" id="top-kpi-ping">8 ms</span>
+            <span class="kpi-sub purple">Optimal</span>
+          </div>
+        </div>
+
+        <div class="kpi-chip">
+          <div class="kpi-ring ring-cyan">
+            <svg viewBox="0 0 36 36"><path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/><path class="ring-fill fill-cyan" stroke-dasharray="94, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/></svg>
+            <span class="ring-icon">〰️</span>
+          </div>
+          <div class="kpi-text">
+            <span class="kpi-label">Jitter</span>
+            <span class="kpi-val" id="top-kpi-jitter">2 ms</span>
+            <span class="kpi-sub cyan">Optimal</span>
+          </div>
+        </div>
+
+        <div class="kpi-chip">
+          <div class="kpi-ring ring-gold">
+            <svg viewBox="0 0 36 36"><path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/><path class="ring-fill fill-gold" stroke-dasharray="100, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/></svg>
+            <span class="ring-icon">📊</span>
+          </div>
+          <div class="kpi-text">
+            <span class="kpi-label">Packet Loss</span>
+            <span class="kpi-val" id="top-kpi-loss">0.0%</span>
+            <span class="kpi-sub green">Optimal</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs (5 Core Modules) -->
+    <div class="nav-tabs-bar">
+      <div class="nav-tabs">
+        <button class="nav-tab active" data-tab="sandbox"><span class="tab-icon">🧪</span> Topology & Sandbox</button>
+        <button class="nav-tab" data-tab="comparison"><span class="tab-icon">⚖️</span> UDP vs TCP</button>
+        <button class="nav-tab" data-tab="packet"><span class="tab-icon">📦</span> Packet Workspace</button>
+        <button class="nav-tab" data-tab="checksum"><span class="tab-icon">🔐</span> Checksum Engine</button>
+        <button class="nav-tab" data-tab="quiz"><span class="tab-icon">🎓</span> Knowledge Lab</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ─── TAB 1: Topology & Sandbox (Styled like the Image) ─── -->
+  <div class="tab-content active" id="tab-sandbox">
+    <div class="noc-dashboard">
+
+      <!-- Main Center Grid: Smart Alerts (Left) + Central Orbit Topology (Center) + Connection Tests (Right) -->
+      <div class="noc-main-grid">
+
+        <!-- Column 1: Smart Alerts Card + Transmission Controls -->
+        <div class="noc-col-left">
+          <div class="noc-card alerts-card">
+            <div class="noc-card-header">
+              <span class="noc-card-title">Smart Alerts</span>
+              <span class="alert-count-pill">3 Active</span>
+            </div>
+            <div class="alerts-list">
+              <div class="alert-item alert-success">
+                <div class="alert-icon-ring green-ring">✓</div>
+                <div class="alert-content">
+                  <div class="alert-title">Primary Link</div>
+                  <div class="alert-desc">Fully operational (Full Line Rate UDP)</div>
+                </div>
+              </div>
+
+              <div class="alert-item alert-warning">
+                <div class="alert-icon-ring amber-ring">⚠️</div>
+                <div class="alert-content">
+                  <div class="alert-title">Latency / Jitter</div>
+                  <div class="alert-desc">Transient buffer queue under load</div>
+                </div>
+              </div>
+
+              <div class="alert-item alert-info">
+                <div class="alert-icon-ring purple-ring">ℹ️</div>
+                <div class="alert-content">
+                  <div class="alert-title">Direct Transmission</div>
+                  <div class="alert-desc">Zero TCP handshake overhead (0-RTT)</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Parameters & Channel Controls -->
+          <div class="noc-card transmission-ctrl-card">
+            <div class="noc-card-header">
+              <span class="noc-card-title">⚙️ Transmission Parameters</span>
+              <span class="node-subtitle" id="sender-node-label">Port: <span id="sender-port">5000</span></span>
+            </div>
+            <div class="ctrl-body">
+              <div class="noc-form-group">
+                <label for="msg-input">Payload Message</label>
+                <textarea id="msg-input" rows="2" class="noc-textarea" placeholder="Enter message payload...">Hello, UDP-Scope World!</textarea>
+              </div>
+
+              <div class="ctrl-row-split">
+                <div class="noc-form-group">
+                  <label for="packet-size">Packet Size (B)</label>
+                  <input type="number" id="packet-size" class="noc-input" value="64" min="1" max="65507" />
+                </div>
+                <div class="noc-form-group">
+                  <label for="burst-count">Burst Count</label>
+                  <input type="number" id="burst-count" class="noc-input" value="5" min="1" max="30" />
+                </div>
+              </div>
+
+              <div class="ctrl-row-split">
+                <div class="noc-form-group">
+                  <label for="send-delay">Delay (ms)</label>
+                  <input type="number" id="send-delay" class="noc-input" value="250" min="0" max="2000" />
+                </div>
+                <div class="noc-form-group">
+                  <label for="loss-rate">Simulated Loss: <b id="loss-rate-val">0%</b></label>
+                  <input type="range" id="loss-rate" class="noc-range" min="0" max="100" value="0" />
+                </div>
+              </div>
+
+              <div class="ctrl-row-split">
+                <div class="noc-form-group">
+                  <label for="jitter-amount">Jitter: <b id="jitter-val">0 ms</b></label>
+                  <input type="range" id="jitter-amount" class="noc-range" min="0" max="150" value="0" />
+                </div>
+                <div class="noc-form-group">
+                  <label for="bandwidth-limit">Bandwidth Limit</label>
+                  <select id="bandwidth-limit" class="noc-select">
+                    <option value="unlimited">Unlimited (1 Gbps)</option>
+                    <option value="100mbps">100 Mbps Fast Eth</option>
+                    <option value="10mbps">10 Mbps Throttle</option>
+                    <option value="1mbps">1 Mbps Bottleneck</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="noc-form-group">
+                <label for="network-condition">Network Condition Preset</label>
+                <select id="network-condition" class="noc-select">
+                  <option value="perfect">🟢 Perfect Network (0% loss, 0ms jitter)</option>
+                  <option value="lossy">🟡 Lossy Channel (30% loss, 20ms jitter)</option>
+                  <option value="congested">🔴 Congested Network (50% loss + jitter)</option>
+                  <option value="chaotic">💥 Chaotic Mesh (70% loss + reorder)</option>
+                </select>
+              </div>
+
+              <div class="stats-mini-matrix">
+                <div>Sent: <b id="stat-sent">0</b></div>
+                <div>Bytes: <b id="stat-bytes-sent">0</b></div>
+                <div>Throughput: <b id="stat-throughput">0 B/s</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Column 2: Centerpiece Central Orbital Canvas (Center of Image) -->
+        <div class="noc-col-center">
+          <div class="noc-card central-orbit-card">
+            <div class="noc-card-header">
+              <div class="orbit-header-title">
+                <span class="orbit-dot-pulse"></span>
+                <span class="noc-card-title">Live Orbital Network Topology & Socket Path</span>
+              </div>
+              <div class="orbit-speed-ctrl">
+                <label for="anim-speed">Speed:</label>
+                <input type="range" id="anim-speed" min="0.5" max="3" step="0.5" value="1" />
+                <span id="anim-speed-val">1x</span>
+              </div>
+            </div>
+
+            <!-- Central Canvas with Orbit Rings and Laser Link -->
+            <div class="canvas-wrap-orbital">
+              <canvas id="net-canvas"></canvas>
+            </div>
+
+            <div class="canvas-legend-bar">
+              <span class="leg-item"><span class="dot dot-green"></span> Delivered</span>
+              <span class="leg-item"><span class="dot dot-red"></span> Dropped</span>
+              <span class="leg-item"><span class="dot dot-yellow"></span> In Transit</span>
+              <span class="leg-item"><span class="dot dot-blue"></span> Reordered</span>
+              <div class="status-tag" id="sender-status">SENDER READY</div>
+              <div class="status-tag" id="recv-status">RECEIVER LISTENING</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Column 3: Connection Diagnostics & Control Card (Testes de Conexão - Right of Image) -->
+        <div class="noc-col-right">
+          <div class="noc-card test-suite-card">
+            <div class="noc-card-header">
+              <span class="noc-card-title">Connection Diagnostics</span>
+              <span class="test-badge">L4 Diagnostics</span>
+            </div>
+            
+            <div class="test-rows-table">
+              <div class="test-row">
+                <span class="test-row-key"><span class="t-icon">↓</span> Bandwidth (Download)</span>
+                <span class="test-row-val">256.42 Mbps</span>
+                <span class="test-row-status status-green">Optimal</span>
+              </div>
+
+              <div class="test-row">
+                <span class="test-row-key"><span class="t-icon">↑</span> Bandwidth (Upload)</span>
+                <span class="test-row-val">98.21 Mbps</span>
+                <span class="test-row-status status-green">Optimal</span>
+              </div>
+
+              <div class="test-row">
+                <span class="test-row-key"><span class="t-icon">⇄</span> Ping (Latency)</span>
+                <span class="test-row-val" id="stat-latency">8 ms</span>
+                <span class="test-row-status status-green">Optimal</span>
+              </div>
+
+              <div class="test-row">
+                <span class="test-row-key"><span class="t-icon">∿</span> Jitter</span>
+                <span class="test-row-val" id="stat-jitter-dyn">2 ms</span>
+                <span class="test-row-status status-green">Optimal</span>
+              </div>
+
+              <div class="test-row">
+                <span class="test-row-key"><span class="t-icon">⤹</span> Traceroute</span>
+                <span class="test-row-val">12 hops</span>
+                <span class="test-row-status status-green">Optimal</span>
+              </div>
+            </div>
+
+            <!-- Primary Action Button -->
+            <div class="test-action-box">
+              <button class="btn-glow-primary" id="btn-send">
+                <span>Start Transmission (Send Packet)</span>
+                <span class="btn-arrow">▶</span>
+              </button>
+              <div class="secondary-btn-row">
+                <button class="btn-glow-secondary" id="btn-burst">⚡ Send Burst</button>
+                <button class="btn-glow-danger" id="btn-reset">↺ Reset</button>
+              </div>
+            </div>
+
+            <!-- Validation Toggles -->
+            <div class="toggle-bar">
+              <label class="toggle-label">
+                <input type="checkbox" id="checksum-toggle" checked />
+                <span class="toggle-slider"></span>
+                Checksum Validation
+              </label>
+              <label class="toggle-label">
+                <input type="checkbox" id="ordering-toggle" />
+                <span class="toggle-slider"></span>
+                Detect Out-of-Order
+              </label>
+            </div>
+
+            <!-- Receiver Live Telemetry -->
+            <div class="recv-telemetry-box">
+              <div class="recv-hdr">
+                <span>📥 Receiver Sockets (Server 1 : <b id="recv-port">8080</b>)</span>
+                <span id="recv-node-label" style="display:none">Server 1</span>
+              </div>
+              <div class="recv-stats-mini">
+                <span>Delivered: <b id="stat-recv" class="green">0</b></span>
+                <span>Dropped: <b id="stat-lost" class="red">0</b></span>
+                <span>Loss: <b id="stat-loss-pct" class="red">0%</b></span>
+                <span>Out-of-Order: <b id="stat-ooo" class="yellow">0</b></span>
+              </div>
+              <div class="recv-log" id="recv-log">
+                <div class="log-placeholder">Waiting for incoming UDP datagrams…</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bottom Row: 4 Feature Rings (Left) + Global Routing Map (Center) + Native Architecture Card (Right) -->
+      <div class="noc-bottom-row">
+
+        <!-- 4 Circular Badges -->
+        <div class="noc-card feature-badges-card">
+          <div class="feature-badge-item">
+            <div class="feature-ring ring-blue">🛡️</div>
+            <span class="feature-name">Reliable</span>
+            <span class="feature-desc">Zero memory leaks</span>
+          </div>
+
+          <div class="feature-badge-item">
+            <div class="feature-ring ring-cyan">⚡</div>
+            <span class="feature-name">High Speed</span>
+            <span class="feature-desc">Zero-RTT transmission</span>
+          </div>
+
+          <div class="feature-badge-item">
+            <div class="feature-ring ring-purple">🎯</div>
+            <span class="feature-name">Accurate</span>
+            <span class="feature-desc">Bit-accurate RFC 768</span>
+          </div>
+
+          <div class="feature-badge-item">
+            <div class="feature-ring ring-green">📊</div>
+            <span class="feature-name">Complete</span>
+            <span class="feature-desc">Full telemetry suite</span>
+          </div>
+        </div>
+
+        <!-- Global Network World Map with Animated Laser Flight Arcs -->
+        <div class="noc-card world-map-card">
+          <div class="noc-card-header">
+            <span class="noc-card-title">🌐 Global Transit Routing Map</span>
+            <span class="route-hops-badge">Active Orbital Links</span>
+          </div>
+          <div class="world-map-wrap">
+            <canvas id="world-map-canvas" height="150"></canvas>
+          </div>
+        </div>
+
+        <!-- Browser Native Summary Card -->
+        <div class="noc-card browser-native-card">
+          <div class="native-speed-icon">
+            <svg viewBox="0 0 48 48" class="speed-svg"><path d="M24 6C14.06 6 6 14.06 6 24c0 4.12 1.41 7.91 3.77 10.95l2.25-1.92A15.86 15.86 0 0 1 9 24c0-8.28 6.72-15 15-15s15 6.72 15 15c0 3.32-1.09 6.38-2.92 8.87l2.22 1.95A17.88 17.88 0 0 0 42 24c0-9.94-8.06-18-18-18z"/><circle cx="24" cy="24" r="3"/><line x1="24" y1="24" x2="33" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </div>
+          <div class="native-content">
+            <h4 class="native-title">Native In-Browser Runtime</h4>
+            <ul class="native-list">
+              <li>✓ Zero installation required.</li>
+              <li>✓ No external daemon agents.</li>
+              <li>✓ Instant client-side execution.</li>
+            </ul>
+          </div>
+          <div class="native-check-badge">✓</div>
+        </div>
+
+      </div>
+
+      <!-- State Flow Timeline Panel -->
+      <div class="timeline-panel noc-card">
+        <div class="timeline-header">
+          <span class="noc-card-title">📈 Packet Event Timeline & State Flow</span>
+          <button class="btn btn-sm btn-ghost" id="btn-clear-timeline">Clear Timeline</button>
+        </div>
+        <div class="timeline" id="timeline"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ─── TAB 2: UDP vs TCP (ANIMATION FIXED & RESTYLED) ───── -->
+  <div class="tab-content" id="tab-comparison">
+    <div class="cmp-container">
+
+      <!-- Header -->
+      <div class="cmp-hero-header">
+        <div class="cmp-hero-headings">
+          <h2 class="cmp-title">⚖️ UDP vs TCP — Controlled Comparative Simulation</h2>
+          <p class="cmp-subtitle">Observe live packet transmission, packet drop handling, acknowledgement feedback, and retransmission dynamics side-by-side.</p>
+        </div>
+        <div class="cmp-hero-badge">Layer 4 Head-to-Head</div>
+      </div>
+
+      <!-- Live Animation Lanes -->
+      <div class="cmp-lanes-wrapper">
+        <!-- Lane 1: UDP -->
+        <div class="cmp-lane udp-lane">
+          <div class="cmp-lane-header">
+            <div class="lane-title-group">
+              <span class="lane-dot dot-udp"></span>
+              <span class="cmp-lane-title udp-color">🚀 UDP — User Datagram Protocol</span>
+            </div>
+            <div class="cmp-lane-badges">
+              <span class="cmp-badge green">Fast (Zero Handshake)</span>
+              <span class="cmp-badge red">Unreliable</span>
+              <span class="cmp-badge yellow">Unordered</span>
+            </div>
+          </div>
+          
+          <div class="lane-canvas-wrap">
+            <canvas id="udp-lane-canvas"></canvas>
+          </div>
+
+          <div class="cmp-lane-footer">
+            <span>Transmission Mode: <b>Fire-and-Forget</b></span>
+            <span id="udp-pkt-count" class="cmp-counter">0 sent</span>
+          </div>
+        </div>
+
+        <div class="cmp-divider">
+          <div class="vs-badge">VS</div>
+        </div>
+
+        <!-- Lane 2: TCP -->
+        <div class="cmp-lane tcp-lane">
+          <div class="cmp-lane-header">
+            <div class="lane-title-group">
+              <span class="lane-dot dot-tcp"></span>
+              <span class="cmp-lane-title tcp-color">🔒 TCP — Transmission Control Protocol</span>
+            </div>
+            <div class="cmp-lane-badges">
+              <span class="cmp-badge blue">ACK Feedback</span>
+              <span class="cmp-badge green">Guaranteed Delivery</span>
+              <span class="cmp-badge green">In-Order</span>
+            </div>
+          </div>
+
+          <div class="lane-canvas-wrap">
+            <canvas id="tcp-lane-canvas"></canvas>
+          </div>
+
+          <div class="cmp-lane-footer">
+            <span>Transmission Mode: <b>Sliding Window with ARQ</b></span>
+            <span id="tcp-pkt-count" class="cmp-counter">0 sent</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Experiment Controls Bar -->
+      <div class="cmp-controls-card">
+        <div class="cmp-btn-group">
+          <button class="btn btn-primary btn-glow" id="btn-compare-start">▶ Start Experiment</button>
+          <button class="btn btn-danger" id="btn-compare-stop">⏹ Stop</button>
+        </div>
+        <div class="cmp-sliders">
+          <div class="cmp-ctrl-item">
+            <label for="cmp-loss">Simulated Loss Rate: <b id="cmp-loss-val">30%</b></label>
+            <input type="range" id="cmp-loss" min="0" max="80" value="30"/>
+          </div>
+          <div class="cmp-ctrl-item">
+            <label for="cmp-speed">Simulation Speed: <b id="cmp-speed-val">1x</b></label>
+            <input type="range" id="cmp-speed" min="0.5" max="3" step="0.5" value="1"/>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Comparison Telemetry Cards -->
+      <div class="cmp-live-stats">
+        <div class="cmp-stat-card udp-card">
+          <div class="cmp-stat-title"><span class="stat-dot dot-udp"></span> UDP Live Telemetry</div>
+          <div class="cmp-stat-row"><span>Datagrams Sent</span><span id="cmp-udp-sent" class="stat-num">0</span></div>
+          <div class="cmp-stat-row"><span>Delivered</span><span id="cmp-udp-recv" class="stat-num green">0</span></div>
+          <div class="cmp-stat-row"><span>Lost (No Retransmission)</span><span id="cmp-udp-lost" class="stat-num red">0</span></div>
+          <div class="cmp-stat-row"><span>Retransmissions Triggered</span><span id="cmp-udp-retry" class="stat-num">0 (None)</span></div>
+        </div>
+
+        <div class="cmp-stat-card tcp-card">
+          <div class="cmp-stat-title"><span class="stat-dot dot-tcp"></span> TCP Live Telemetry</div>
+          <div class="cmp-stat-row"><span>Packets Sent</span><span id="cmp-tcp-sent" class="stat-num">0</span></div>
+          <div class="cmp-stat-row"><span>Delivered</span><span id="cmp-tcp-recv" class="stat-num green">0</span></div>
+          <div class="cmp-stat-row"><span>Lost (Triggered Retransmit)</span><span id="cmp-tcp-lost" class="stat-num yellow">0</span></div>
+          <div class="cmp-stat-row"><span>ACKs Returned</span><span id="cmp-tcp-acks" class="stat-num blue">0</span></div>
+        </div>
+      </div>
+
+      <!-- Full Comparison Table -->
+      <div class="cmp-table-section">
+        <h3 class="cmp-table-title">📋 Protocol Engineering Specification Matrix</h3>
+        <div class="cmp-table-wrapper">
+          <table class="cmp-table">
+            <thead>
+              <tr>
+                <th>Protocol Dimension</th>
+                <th class="udp-col">UDP (User Datagram Protocol)</th>
+                <th class="tcp-col">TCP (Transmission Control Protocol)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><b>Connection State</b></td>
+                <td class="good">Connectionless (Zero Handshake)</td>
+                <td>Connection-Oriented (3-Way Handshake)</td>
+              </tr>
+              <tr>
+                <td><b>Header Overhead</b></td>
+                <td class="good">8 Bytes Fixed (Minimal Overhead)</td>
+                <td>20 – 60 Bytes (Substantial Overhead)</td>
+              </tr>
+              <tr>
+                <td><b>Delivery Reliability</b></td>
+                <td class="bad">Unreliable (Best-Effort Delivery)</td>
+                <td class="good">Guaranteed (Retransmits Lost Segments)</td>
+              </tr>
+              <tr>
+                <td><b>Packet Ordering</b></td>
+                <td class="bad">None (Packets may arrive out-of-order)</td>
+                <td class="good">Strictly Sequenced & Ordered</td>
+              </tr>
+              <tr>
+                <td><b>Congestion & Flow Control</b></td>
+                <td>None (Sender transmits at line-rate)</td>
+                <td class="good">AIMD, Slow-Start, Sliding Window</td>
+              </tr>
+              <tr>
+                <td><b>Primary Use Cases</b></td>
+                <td class="good">Gaming, DNS, VoIP, Video Streaming</td>
+                <td>Web (HTTP/HTTPS), SSH, FTP, File Transfers</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ─── TAB 3: Packet Workspace (Redesigned Dashboard) ────── -->
+  <div class="tab-content" id="tab-packet">
+    <div class="pa-workspace">
+
+      <!-- SECTION A: Top Navigation Bar -->
+      <div class="pa-navbar">
+        <div class="pa-nav-left">
+          <div class="pa-nav-icon-badge">📦</div>
+          <div class="pa-nav-headings">
+            <h2 class="pa-nav-title">Packet Assembly Workspace</h2>
+            <p class="pa-nav-subtitle">UDP Datagram Construction, Bit-Level Header Inspection & Physical Encapsulation</p>
+          </div>
+        </div>
+        <div class="pa-nav-center">
+          <div class="pa-status-pill ready" id="pa-status-pill">
+            <span class="pa-status-dot"></span>
+            <span class="pa-status-label" id="pa-status-text">Packet Ready</span>
+          </div>
+        </div>
+        <div class="pa-nav-right">
+          <span class="pa-badge pa-badge-ip">🌐 IPv4 Header (20B)</span>
+          <span class="pa-badge pa-badge-udp">📦 UDP Header (8B)</span>
+          <span class="pa-badge pa-badge-pay">📝 Payload (<b id="pa-badge-pay-size">16B</b>)</span>
+        </div>
+      </div>
+
+      <!-- SECTION B + E + G: Upper Dashboard Tier -->
+      <div class="pa-upper-grid">
+
+        <!-- SECTION B: Main Network Visualization -->
+        <div class="pa-card pa-net-card">
+          <div class="pa-card-header">
+            <div class="pa-header-left">
+              <span class="pa-card-title">🌐 Live Network Topology & Datagram Transit</span>
+              <span class="pa-tag">End-to-End Socket Path</span>
+            </div>
+            <div class="pa-net-actions">
+              <button class="pa-btn-ghost-sm" id="btn-net-transit" title="Simulate packet transit across network topology">
+                ▶ Animate Transit
+              </button>
+              <div class="pa-net-hud" id="pa-net-hud">Status: <b id="pa-net-hud-status">Idle (Ready)</b></div>
+            </div>
+          </div>
+          <div class="pa-net-canvas-wrap">
+            <canvas id="pa-net-canvas"></canvas>
+          </div>
+          <div class="pa-net-telemetry-bar">
+            <div class="pa-net-node-badge sender-badge">
+              <span class="node-indicator"></span>
+              <span>Sender Host: <b id="pa-topo-src-ip">192.168.1.10</b>:<b id="pa-topo-src-port">5000</b></span>
+            </div>
+            <div class="pa-net-route-indicator">
+              <span class="route-line-anim">➔ [ Gateway Router: 192.168.1.1 | MTU 1500 ] ➔</span>
+            </div>
+            <div class="pa-net-node-badge receiver-badge">
+              <span class="node-indicator"></span>
+              <span>Receiver Host: <b id="pa-topo-dst-ip">192.168.1.20</b>:<b id="pa-topo-dst-port">8080</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION G + E: Statistics Cards and Live Information Sidebar -->
+        <div class="pa-side-telemetry">
+
+          <!-- SECTION G: Packet Statistics Cards -->
+          <div class="pa-stats-deck">
+            <div class="pa-stat-card ip-stat">
+              <div class="pa-stat-hdr"><span class="stat-icon">🌐</span> IPv4 Header</div>
+              <div class="pa-stat-val">20 <small>bytes</small></div>
+              <div class="pa-stat-sub">Fixed (RFC 791)</div>
+            </div>
+            <div class="pa-stat-card udp-stat">
+              <div class="pa-stat-hdr"><span class="stat-icon">📦</span> UDP Header</div>
+              <div class="pa-stat-val">8 <small>bytes</small></div>
+              <div class="pa-stat-sub">Fixed (RFC 768)</div>
+            </div>
+            <div class="pa-stat-card pay-stat">
+              <div class="pa-stat-hdr"><span class="stat-icon">📝</span> Payload</div>
+              <div class="pa-stat-val" id="pa-stat-payload">16 <small>bytes</small></div>
+              <div class="pa-stat-sub">Dynamic User Data</div>
+            </div>
+            <div class="pa-stat-card total-stat">
+              <div class="pa-stat-hdr"><span class="stat-icon">📊</span> Total Packet</div>
+              <div class="pa-stat-val" id="pa-stat-total">44 <small>bytes</small></div>
+              <div class="pa-stat-sub" id="pa-stat-bits">352 bits on wire</div>
+            </div>
+          </div>
+
+          <!-- SECTION E: Dynamic Packet Information Sidebar -->
+          <div class="pa-card pa-info-sidebar">
+            <div class="pa-card-header pa-card-header-compact">
+              <span class="pa-card-title">📊 Dynamic Packet Telemetry</span>
+              <span class="pa-csum-pill valid" id="pa-csum-status-pill">VALID CHECKSUM</span>
+            </div>
+            <div class="pa-info-table">
+              <div class="pa-info-row">
+                <span class="pa-info-key">Source IP</span>
+                <span class="pa-info-val ip-val" id="pa-info-src-ip">192.168.1.10</span>
+              </div>
+              <div class="pa-info-row">
+                <span class="pa-info-key">Destination IP</span>
+                <span class="pa-info-val ip-val" id="pa-info-dst-ip">192.168.1.20</span>
+              </div>
+              <div class="pa-info-row">
+                <span class="pa-info-key">Source Port</span>
+                <span class="pa-info-val udp-val" id="pa-info-src-port">5000</span>
+              </div>
+              <div class="pa-info-row">
+                <span class="pa-info-key">Destination Port</span>
+                <span class="pa-info-val udp-val" id="pa-info-dst-port">8080</span>
+              </div>
+              <div class="pa-info-row">
+                <span class="pa-info-key">Protocol Number</span>
+                <span class="pa-info-val ip-val">17 (UDP / 0x11)</span>
+              </div>
+              <div class="pa-info-row">
+                <span class="pa-info-key">UDP Length</span>
+                <span class="pa-info-val udp-val" id="pa-info-udp-len">24 bytes</span>
+              </div>
+              <div class="pa-info-row">
+                <span class="pa-info-key">IPv4 Total Length</span>
+                <span class="pa-info-val ip-val" id="pa-info-ip-total">44 bytes</span>
+              </div>
+              <div class="pa-info-row">
+                <span class="pa-info-key">Checksum</span>
+                <span class="pa-info-val font-mono" id="pa-info-checksum">—</span>
+              </div>
+              <div class="pa-info-row">
+                <span class="pa-info-key">Payload Size</span>
+                <span class="pa-info-val pay-val" id="pa-info-payload-size">16 bytes</span>
+              </div>
+              <div class="pa-info-row pa-info-highlight">
+                <span class="pa-info-key">Total Packet Size</span>
+                <span class="pa-info-val highlight-val" id="pa-info-total-size">44 bytes</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- SECTION C: 5-Stage Packet Assembly Progress Tracker -->
+      <div class="pa-card pa-stage-tracker-card">
+        <div class="pa-tracker-header">
+          <div class="pa-tracker-title-group">
+            <span class="pa-tracker-title">⚙️ Five-Stage Datagram Assembly Progress</span>
+            <span class="pa-tracker-subtitle">Follow the exact architectural pipeline from application memory buffer to wire framing</span>
+          </div>
+          <div class="pa-tracker-controls">
+            <button class="pa-ctrl-btn" id="btn-stage-prev" title="Previous assembly stage">◀ Prev</button>
+            <button class="pa-ctrl-btn" id="btn-stage-play" title="Play or pause auto-assembly walkthrough">▶ Play</button>
+            <button class="pa-ctrl-btn" id="btn-stage-next" title="Next assembly stage">Next ▶</button>
+            <button class="pa-ctrl-btn" id="btn-stage-replay" title="Replay assembly sequence">🔄 Replay</button>
+          </div>
+        </div>
+
+        <div class="pa-stage-track">
+          <div class="pa-stage-line">
+            <div class="pa-stage-progress-fill" id="pa-stage-fill"></div>
+          </div>
+          <div class="pa-stage-pills" id="pa-stage-pills">
+            <div class="pa-stage-pill" data-stage="1">
+              <span class="pa-stage-num">1</span>
+              <span class="pa-stage-name">Application Data</span>
+            </div>
+            <div class="pa-stage-pill" data-stage="2">
+              <span class="pa-stage-num">2</span>
+              <span class="pa-stage-name">UDP Header Attachment</span>
+            </div>
+            <div class="pa-stage-pill" data-stage="3">
+              <span class="pa-stage-num">3</span>
+              <span class="pa-stage-name">IPv4 Header Attachment</span>
+            </div>
+            <div class="pa-stage-pill" data-stage="4">
+              <span class="pa-stage-num">4</span>
+              <span class="pa-stage-name">Encapsulation</span>
+            </div>
+            <div class="pa-stage-pill active" data-stage="5">
+              <span class="pa-stage-num">5</span>
+              <span class="pa-stage-name">Ready for Transmission</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="pa-stage-explainer" id="pa-stage-explainer">
+          <div class="pa-explainer-badge" id="pa-stage-badge">Stage 5: Ready for Transmission</div>
+          <div class="pa-explainer-text" id="pa-stage-text">
+            The datagram is fully encapsulated with 20-byte IPv4 and 8-byte UDP headers. Byte offsets and network checksums are finalized and queued for delivery through the physical network interface.
+          </div>
+        </div>
+
+        <!-- Hidden canvas and status for compatibility with any legacy hooks -->
+        <canvas id="packet-canvas" style="display:none;"></canvas>
+        <div id="pb-anim-status" style="display:none;"></div>
+      </div>
+
+      <!-- SECTION D + F + Configuration Inputs: Main Workstation Grid -->
+      <div class="pa-main-grid">
+
+        <!-- Column 1: Configuration & Inputs -->
+        <div class="pa-col pa-inputs-col">
+
+          <!-- IPv4 Header Layer Card -->
+          <div class="pa-card pa-input-card" id="pb-card-ip">
+            <div class="pa-card-header pa-card-header-compact ip-border">
+              <span class="pa-card-title">🌐 IPv4 Layer Configuration <small>(20B)</small></span>
+            </div>
+            <div class="pa-card-body" id="pb-body-ip">
+              <div class="pa-form-group">
+                <label for="src-ip">Source IP Address</label>
+                <input class="pa-input font-mono" type="text" id="src-ip" value="192.168.1.10" />
+              </div>
+              <div class="pa-form-group">
+                <label for="dst-ip">Destination IP Address</label>
+                <input class="pa-input font-mono" type="text" id="dst-ip" value="192.168.1.20" />
+              </div>
+              <div class="pa-form-group-split">
+                <div>
+                  <label for="ttl">TTL (Hop Limit)</label>
+                  <input class="pa-input font-mono" type="number" id="ttl" value="64" min="1" max="255"/>
+                </div>
+                <div>
+                  <label>Protocol</label>
+                  <input class="pa-input pa-readonly font-mono" value="17 (0x11 UDP)" readonly/>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- UDP Header Layer Card -->
+          <div class="pa-card pa-input-card" id="pb-card-udp">
+            <div class="pa-card-header pa-card-header-compact udp-border">
+              <span class="pa-card-title">📦 UDP Layer Configuration <small>(8B)</small></span>
+            </div>
+            <div class="pa-card-body" id="pb-body-udp">
+              <div class="pa-form-group">
+                <label for="src-port">Source Port</label>
+                <div class="pa-input-with-select">
+                  <input class="pa-input font-mono" type="number" id="src-port" value="5000" min="1" max="65535"/>
+                  <select class="pa-select" id="src-port-preset" title="Ephemeral port presets">
+                    <option value="">Preset</option>
+                    <option value="5000">5000 (Custom)</option>
+                    <option value="49152">49152 (Dynamic)</option>
+                    <option value="54321">54321 (Client)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="pa-form-group">
+                <label for="dst-port">Destination Port</label>
+                <div class="pa-input-with-select">
+                  <input class="pa-input font-mono" type="number" id="dst-port" value="8080" min="1" max="65535"/>
+                  <select class="pa-select" id="dst-port-preset" title="Well-known UDP ports">
+                    <option value="">Preset</option>
+                    <option value="53">53 (DNS)</option>
+                    <option value="67">67 (DHCP Server)</option>
+                    <option value="68">68 (DHCP Client)</option>
+                    <option value="69">69 (TFTP)</option>
+                    <option value="123">123 (NTP)</option>
+                    <option value="161">161 (SNMP)</option>
+                    <option value="514">514 (Syslog)</option>
+                    <option value="1194">1194 (OpenVPN)</option>
+                    <option value="5353">5353 (mDNS)</option>
+                    <option value="8080">8080 (Custom)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="pa-form-group">
+                <label for="checksum-val">Checksum (16-bit 1's Complement)</label>
+                <input class="pa-input pa-readonly font-mono" type="text" id="checksum-val" value="—" readonly/>
+              </div>
+            </div>
+          </div>
+
+          <!-- Application Payload Layer Card -->
+          <div class="pa-card pa-input-card" id="pb-card-payload">
+            <div class="pa-card-header pa-card-header-compact pay-border">
+              <span class="pa-card-title">📝 Application Payload Data</span>
+            </div>
+            <div class="pa-card-body" id="pb-body-payload">
+              <div class="pa-payload-presets">
+                <button class="pb-type-btn active" data-type="text">Text</button>
+                <button class="pb-type-btn" data-type="dns">DNS Query</button>
+                <button class="pb-type-btn" data-type="ntp">NTP Packet</button>
+                <button class="pb-type-btn" data-type="game">Game Sync</button>
+              </div>
+              <textarea class="pa-textarea font-mono" id="payload-data" rows="3" placeholder="Enter payload data...">Hello, UDP-Scope!</textarea>
+              <div class="pa-payload-stats">
+                <span>Chars: <b id="pb-char-count">16</b></span>
+                <span>Payload: <b id="pb-byte-count">16</b>B</span>
+                <span>Total: <b id="pb-total-size">44</b>B</span>
+              </div>
+              <!-- Hidden compat elements -->
+              <input type="text" id="total-length" style="display:none" value="44 bytes" readonly/>
+              <div class="pb-summary" id="pb-summary" style="display:none">
+                <span id="pb-payload-size">16B</span>
+                <span id="pb-total-label">44B</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Column 2: SECTION D - Interactive Packet Structure Visualization -->
+        <div class="pa-col pa-structure-col">
+          <div class="pa-card pa-struct-card">
+            <div class="pa-card-header">
+              <div class="pa-header-left">
+                <span class="pa-card-title">📐 Interactive 32-Bit Datagram Structure</span>
+                <span class="pa-tag">Click any field to inspect parameters</span>
+              </div>
+              <div class="pa-bit-scale-legend">
+                <span>Bit 0</span>
+                <span>Bit 15</span>
+                <span>Bit 31</span>
+              </div>
+            </div>
+            <div class="pa-struct-diagram" id="pa-interactive-diagram">
+              <!-- Dynamically populated 32-bit aligned grid -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Column 3: SECTION F - Packet Inspector with 3 Tabs & Field Explainer Panel -->
+        <div class="pa-col pa-inspector-col">
+          <div class="pa-card pa-inspector-card">
+            <div class="pa-inspector-nav">
+              <button class="pa-insp-tab active" data-tab="diagram">📐 Packet Diagram</button>
+              <button class="pa-insp-tab" data-tab="hex">01 Hexadecimal View</button>
+              <button class="pa-insp-tab" data-tab="binary">10 Binary View</button>
+            </div>
+
+            <!-- Tab 1: Packet Diagram & Wireshark Dissector Tree -->
+            <div class="pa-insp-content active" id="pa-tab-diagram">
+              <div class="wireshark-inspector" id="wireshark-tree">
+                <div class="ws-notice">🦈 Wireshark-Style Protocol Dissector: Expand layers below to inspect protocol hierarchy.</div>
+                <div class="ws-tree-container" id="ws-tree-root">
+                  <div class="placeholder-text">Build a packet to inspect protocol layers.</div>
+                </div>
+              </div>
+              <div class="pb-datagram" id="pb-datagram" style="display:none;"></div>
+              <div id="decoded-fields" class="decoded-fields pb-fields-list" style="display:none;"></div>
+            </div>
+
+            <!-- Tab 2: Hexadecimal View with byte highlighting -->
+            <div class="pa-insp-content" id="pa-tab-hex">
+              <div class="pa-hex-container">
+                <div class="pa-hex-header">
+                  <span class="pa-hex-col-hdr">Offset</span>
+                  <span class="pa-hex-col-hdr">00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F</span>
+                  <span class="pa-hex-col-hdr">ASCII</span>
+                </div>
+                <div class="pa-hex-body" id="pa-interactive-hex">
+                  <!-- Interactive byte-by-byte hex tokens -->
+                </div>
+                <!-- Legacy pre for script compat -->
+                <pre id="hex-dump" style="display:none;"></pre>
+              </div>
+            </div>
+
+            <!-- Tab 3: Binary View with bit inspection -->
+            <div class="pa-insp-content" id="pa-tab-binary">
+              <div class="pa-bin-container">
+                <div class="pa-bin-legend">
+                  <span class="bin-chip bin-chip-ip">■ IPv4 (Bits 0-159)</span>
+                  <span class="bin-chip bin-chip-udp">■ UDP (Bits 160-223)</span>
+                  <span class="bin-chip bin-chip-pay">■ Payload</span>
+                </div>
+                <div class="pa-bin-body" id="pa-interactive-binary">
+                  <!-- Binary representation of bytes -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dynamic Field Detail Explainer Panel -->
+          <div class="pa-card pa-field-panel" id="field-detail-panel">
+            <div class="pa-field-panel-header">
+              <div class="pa-field-header-info">
+                <span class="pa-field-layer-badge" id="fd-layer-badge">UDP Header</span>
+                <span class="pa-field-name-title" id="fd-name">Destination Port</span>
+              </div>
+              <span class="pa-field-width-badge" id="fd-width">16 Bits (2 Bytes)</span>
+            </div>
+            <div class="pa-field-panel-body">
+              <div class="pa-field-prop">
+                <span class="pa-field-prop-label">Current Value:</span>
+                <span class="pa-field-prop-val" id="fd-val">8080 (0x1F90)</span>
+              </div>
+              <div class="pa-field-prop">
+                <span class="pa-field-prop-label">Engineering Purpose:</span>
+                <p class="pa-field-desc" id="fd-desc">Identifies the destination application socket or service process on the target host receiving this datagram.</p>
+              </div>
+              <div class="pa-field-prop">
+                <span class="pa-field-prop-label">Standard Specification & Example:</span>
+                <p class="pa-field-example" id="fd-example">RFC 768. Standard well-known ports include 53 (DNS), 67 (DHCP), 123 (NTP). Ports 1024-49151 are registered services.</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- SECTION H: Bottom Control Panel & Event Log -->
+      <div class="pa-card pa-bottom-card">
+        <div class="pa-bottom-bar">
+          <div class="pa-bottom-actions">
+            <button class="pa-btn pa-btn-primary" id="btn-build-packet">
+              <span class="btn-icon">🔨</span> Assemble Packet
+            </button>
+            <button class="pa-btn pa-btn-success" id="btn-send-built">
+              <span class="btn-icon">📤</span> Send to Sandbox
+            </button>
+            <button class="pa-btn pa-btn-warning" id="btn-inject-error">
+              <span class="btn-icon">💥</span> Inject Bit Error
+            </button>
+            <button class="pa-btn pa-btn-danger" id="btn-reset-packet">
+              <span class="btn-icon">🔄</span> Reset Packet
+            </button>
+          </div>
+          <div class="pa-live-status-box" id="pa-status-message">
+            Ready to assemble UDP datagram. Configure parameters or choose a preset payload.
+          </div>
+        </div>
+
+        <!-- Full-width Event Log -->
+        <div class="pb-eventlog pa-eventlog-embedded">
+          <div class="pb-eventlog-header">
+            <span class="pb-eventlog-title">📋 Packet Inspection Event Log</span>
+            <div class="pb-eventlog-controls">
+              <button class="pb-filter-btn active" data-filter="all">All Events</button>
+              <button class="pb-filter-btn" data-filter="build">🔨 Build</button>
+              <button class="pb-filter-btn" data-filter="send">📤 Send</button>
+              <button class="pb-filter-btn" data-filter="error">💥 Error</button>
+              <button class="pb-filter-btn" data-filter="info">ℹ Info</button>
+              <button class="pb-filter-btn pb-clear-btn" id="pb-log-clear">Clear</button>
+              <span class="pb-log-count" id="pb-log-count">0 events</span>
+            </div>
+          </div>
+          <div class="pb-log-entries" id="pb-log-entries">
+            <div class="pb-log-empty">No events logged yet — build or inspect a packet to start logging.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ─── TAB 4: Checksum Engine ────────────────────────────── -->
+  <div class="tab-content" id="tab-checksum">
+    <div class="cs-layout">
+
+      <!-- ── Left: Input Panel ── -->
+      <div class="cs-input-panel">
+        <div class="cs-panel-title">🔐 RFC 768 / RFC 1071 Checksum Engine</div>
+        <p class="cs-panel-sub">Inspect how 16-bit one's-complement addition mathematically computes and verifies UDP datagram integrity.</p>
+
+        <div class="cs-notice-banner">
+          💡 <strong>Key Takeaway:</strong> The UDP checksum detects bit corruption. It does <em>not</em> perform error correction or request retransmission.
+        </div>
+
+        <div class="cs-field-group">
+          <div class="cs-field-label">IPv4 Pseudo-Header (12 bytes)</div>
+          <div class="cs-field-row">
+            <span class="cs-field-name">Source IP</span>
+            <input class="cs-input font-mono" id="cs-src-ip" value="192.168.1.10" />
+          </div>
+          <div class="cs-field-row">
+            <span class="cs-field-name">Dest IP</span>
+            <input class="cs-input font-mono" id="cs-dst-ip" value="192.168.1.20" />
+          </div>
+          <div class="cs-field-row">
+            <span class="cs-field-name">Protocol</span>
+            <input class="cs-input font-mono" readonly value="17 (UDP / 0x0011)" />
+          </div>
+        </div>
+
+        <div class="cs-field-group">
+          <div class="cs-field-label">UDP Header (8 bytes)</div>
+          <div class="cs-field-row">
+            <span class="cs-field-name">Source Port</span>
+            <input class="cs-input font-mono" id="cs-src-port" type="number" value="5000" min="1" max="65535" />
+          </div>
+          <div class="cs-field-row">
+            <span class="cs-field-name">Dest Port</span>
+            <input class="cs-input font-mono" id="cs-dst-port" type="number" value="8080" min="1" max="65535" />
+          </div>
+        </div>
+
+        <div class="cs-field-group">
+          <div class="cs-field-label">Application Payload Data</div>
+          <textarea class="cs-textarea font-mono" id="cs-payload" rows="3">Hello UDP-Scope!</textarea>
+        </div>
+
+        <div class="cs-btn-row">
+          <button class="btn btn-primary" id="cs-btn-compute">▶ Step-by-Step Compute</button>
+          <button class="btn btn-warning" id="cs-btn-corrupt">💥 Corrupt &amp; Verify</button>
+          <button class="btn btn-danger"  id="cs-btn-reset">↺ Reset</button>
+        </div>
+
+        <!-- Computed Result -->
+        <div class="cs-result-box" id="cs-result-box">
+          <div class="cs-result-label">Calculated Checksum Word</div>
+          <div class="cs-result-value" id="cs-result-val">—</div>
+          <div class="cs-result-status" id="cs-result-status"></div>
+        </div>
+
+        <!-- Speed control -->
+        <div class="cs-speed-row">
+          <label for="cs-speed">Calculation Speed:</label>
+          <input type="range" id="cs-speed" min="0.5" max="4" step="0.5" value="1" />
+          <span id="cs-speed-val">1x</span>
+        </div>
+      </div>
+
+      <!-- ── Center: Animation Canvas ── -->
+      <div class="cs-canvas-panel">
+        <div class="cs-canvas-header">
+          <span id="cs-anim-label">16-Bit Word Addition Trace</span>
+          <div class="cs-step-row" id="cs-step-pills"></div>
+        </div>
+        <canvas id="cs-canvas"></canvas>
+        <div class="cs-canvas-legend">
+          <span class="cs-leg cs-leg-pseudo">IPv4 Pseudo-Header Words</span>
+          <span class="cs-leg cs-leg-udp">UDP Header Words</span>
+          <span class="cs-leg cs-leg-payload">Payload Words</span>
+          <span class="cs-leg cs-leg-sum">Running Accumulated Sum</span>
+        </div>
+      </div>
+
+      <!-- ── Right: Step Breakdown & Receiver Check ── -->
+      <div class="cs-steps-panel">
+        <div class="cs-panel-title">📋 Step-by-Step Math Breakdown</div>
+        <div class="cs-steps-list" id="cs-steps-list">
+          <div class="cs-step-placeholder">Click "Step-by-Step Compute" to trace addition.</div>
+        </div>
+
+        <!-- Bit-level view -->
+        <div class="cs-bit-section">
+          <div class="cs-panel-title" style="margin-bottom:8px">🔢 16-Bit Binary Representation</div>
+          <div class="cs-bit-table-wrap" id="cs-bit-table">
+            <div class="cs-step-placeholder">Binary 16-bit registers will appear here.</div>
+          </div>
+        </div>
+
+        <!-- Verification section -->
+        <div class="cs-verify-section" id="cs-verify-section" style="display:none">
+          <div class="cs-panel-title">🔍 Receiver Verification (Check = 0xFFFF)</div>
+          <div class="cs-verify-body" id="cs-verify-body"></div>
+          <canvas id="cs-verify-canvas" height="130"></canvas>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ─── TAB 5: Knowledge Lab & Assessment ─────────────────── -->
+  <div class="tab-content" id="tab-quiz">
+    <div class="quiz-container">
+      <div class="quiz-header">
+        <h2>🎓 UDP-Scope Knowledge Lab & Self-Assessment</h2>
+        <p>Test your mastery of UDP datagram formation, pseudo-headers, checksum mechanics, and TCP/UDP differences.</p>
+      </div>
+
+      <div class="quiz-score-bar">
+        <div class="quiz-score-text">Score: <b id="quiz-score-val">0 / 6</b></div>
+        <div class="quiz-progress-bar"><div class="quiz-progress-fill" id="quiz-progress-fill"></div></div>
+        <button class="btn btn-sm btn-danger" id="btn-quiz-reset">↺ Reset Quiz</button>
+      </div>
+
+      <div class="quiz-questions-list" id="quiz-questions-list"></div>
+    </div>
+  </div>
+
+  <script src="src/app.js"></script>
+</body>
+</html>
